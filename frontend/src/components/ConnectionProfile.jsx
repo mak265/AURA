@@ -1,0 +1,7 @@
+import { INTENTIONS, PROMPTS } from '../connectionOptions';
+export function ConnectionFields({ intention, setIntention, answers, setAnswers }) {
+return <div className="space-y-4"><label className="block text-xs text-gray-400">DATING INTENTION<select className="aura-input mt-2" value={intention} onChange={e => setIntention(e.target.value)}><option value="">Prefer not to say</option>{INTENTIONS.map(v => <option key={v}>{v}</option>)}</select></label><div><h3 className="font-bold text-sm">A little more about you</h3><p className="text-xs text-gray-400 mt-1">Optional answers appear on your anonymous aura. Keep personal details private.</p></div>{PROMPTS.map((q,i) => <label key={q} className="block text-xs text-aura-violet-light">{q}<textarea className="aura-input mt-2 resize-none" rows={2} maxLength={200} value={answers[i] || ''} placeholder="Let your personality shine…" onChange={e => setAnswers(answers.map((a,j) => i === j ? e.target.value : a))}/><span className="block text-right text-gray-500">{(answers[i] || '').length}/200</span></label>)}</div>;
+}
+export function ConnectionDetails({ intention, answers = [] }) {
+return <div className="space-y-3 mt-3">{intention && <span className="inline-block text-xs px-3 py-1.5 rounded-full bg-aura-violet/20 text-aura-violet-light">{intention}</span>}{PROMPTS.map((q,i) => answers[i] && <div key={q} className="rounded-xl bg-aura-elevated p-3"><p className="text-xs text-aura-violet-light">{q}</p><p className="text-sm mt-1 whitespace-pre-wrap break-words">{answers[i]}</p></div>)}</div>;
+}

@@ -1,0 +1,6 @@
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS unsent_at TIMESTAMPTZ;
+CREATE TABLE IF NOT EXISTS hidden_messages (
+ message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+ user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+ PRIMARY KEY(message_id,user_id)
+);

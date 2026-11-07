@@ -1,0 +1,5 @@
+import Icon from './Icon';
+const AUDIENCES = [['public','Public'],['connections','Connections only'],['private','Myself only']];
+export default function PostAudience({ value = 'public', onChange, disabled = false, label = 'Post audience' }) {
+  return onChange ? <label className="audience-control text-[11px] text-gray-400 inline-flex items-center gap-1.5"><Icon name={value==='private'?'lock':value==='connections'?'people':'globe'} size={12}/><span className="sr-only">{label}</span><select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)} className="bg-aura-elevated border border-aura-border rounded-lg px-2 py-2 text-xs text-gray-300">{AUDIENCES.map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label> : <span className="inline-flex items-center gap-1 text-[10px] text-gray-400"><Icon name={value==='private'?'lock':value==='connections'?'people':'globe'} size={11}/>{AUDIENCES.find(([id])=>id===value)?.[1] || 'Public'}</span>;
+}

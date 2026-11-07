@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>VuDate - Dating App UI</title>
+<style>
+  :root {
+    --violet-50: #F5F3FF;
+    --violet-100: #EDE9FE;
+    --violet-200: #DDD6FE;
+    --violet-300: #C4B5FD;
+    --violet-400: #A78BFA;
+    --violet-500: #8B5CF6;
+    --violet-600: #7C3AED;
+    --violet-700: #6D28D9;
+    --violet-800: #5B21B6;
+    --bg-page: #E9E7EF;
+    --text-dark: #1F1633;
+    --text-muted: #9CA3AF;
+    --online: #22C55E;
+    --red: #EF4444;
+    --white: #FFFFFF;
+    --border: #EEECF5;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg-page);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    color: var(--text-dark);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .stage {
+    display: flex;
+    gap: 32px;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: flex-start;
+  }
+
+  /* ---------- Phone frame ---------- */
+  .phone {
+    width: 320px;
+    height: 660px;
+    background: var(--white);
+    border-radius: 44px;
+    box-shadow: 0 30px 60px rgba(91, 33, 182, 0.15), 0 8px 20px rgba(0,0,0,0.08);
+    overflow: hidden;
+    position: relative;
+    border: 9px solid #1a1a1a;
+  }
+
+  .notch {
+    position: absolute;
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 130px; height: 26px;
+    background: #1a1a1a;
+    border-radius: 0 0 16px 16px;
+    z-index: 100;
+  }
+
+  .screen {
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: var(--white);
+    position: relative;
+  }
+  .screen::-webkit-scrollbar { display: none; }
+
+  /* ---------- Status bar ---------- */
+  .status-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 24px 6px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .status-bar .icons { display: flex; gap: 5px; align-items: center; }
+  .status-bar .icons svg { width: 16px; height: 16px; }
+
+  /* =========================================================
+     SCREEN 1: CHAT LIST
+     ========================================================= */
+  .s1 { background: var(--white); }
+
+  .s1-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 20px 16px;
+  }
+  .s1-header h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
+  .s1-header .actions { display: flex; gap: 10px; }
+  .icon-btn {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--violet-50);
+    display: flex; align-items: center; justify-content: center;
+    border: none; cursor: pointer;
+    color: var(--violet-600);
+  }
+
+  /* Stories */
+  .stories {
+    display: flex;
+    gap: 12px;
+    padding: 4px 20px 18px;
+    overflow-x: auto;
+  }
+  .stories::-webkit-scrollbar { display: none; }
+  .story {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    flex: 0 0 auto;
+  }
+  .story-ring {
+    width: 54px; height: 54px;
+    border-radius: 50%;
+    padding: 2px;
+    background: linear-gradient(135deg, var(--violet-500), var(--violet-300));
+  }
+  .story-ring.muted { background: var(--border); }
+  .story-ring img {
+    width: 100%; height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--white);
+  }
+  .story span { font-size: 11px; color: var(--text-muted); max-width: 54px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Best matches */
+  .section-title {
+    font-size: 16px; font-weight: 700;
+    padding: 0 20px 12px;
+  }
+  .matches {
+    display: flex;
+    gap: 12px;
+    padding: 0 20px 16px;
+    overflow-x: auto;
+  }
+  .matches::-webkit-scrollbar { display: none; }
+  .match-card {
+    flex: 0 0 150px;
+    height: 190px;
+    border-radius: 18px;
+    overflow: hidden;
+    position: relative;
+    background: var(--violet-100);
+  }
+  .match-card img {
+    width: 100%; height: 100%; object-fit: cover;
+  }
+  .match-card .overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(to top, rgba(31,22,51,0.85) 0%, rgba(31,22,51,0) 55%);
+    display: flex; flex-direction: column; justify-content: flex-end;
+    padding: 12px;
+  }
+  .match-card .name { color: var(--white); font-weight: 700; font-size: 14px; }
+  .match-card .tags { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .tag {
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.2);
+    color: var(--white);
+    backdrop-filter: blur(4px);
+    display: inline-flex; align-items: center; gap: 3px;
+  }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    margin: 0 20px 8px;
+    background: var(--violet-50);
+    border-radius: 14px;
+    padding: 4px;
+  }
+  .tab {
+    flex: 1;
+    text-align: center;
+    padding: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 10px;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .tab.active {
+    background: var(--white);
+    color: var(--violet-700);
+    box-shadow: 0 2px 6px rgba(91,33,182,0.1);
+  }
+
+  /* Chat list */
+  .chat-list { padding: 8px 0 80px; }
+  .chat-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 20px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .chat-item:hover { background: var(--violet-50); }
+  .chat-avatar {
+    width: 48px; height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+  .chat-info { flex: 1; min-width: 0; }
+  .chat-top { display: flex; justify-content: space-between; align-items: center; }
+  .chat-name { font-weight: 700; font-size: 14px; }
+  .chat-time { font-size: 11px; color: var(--text-muted); }
+  .chat-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 2px; }
+  .chat-msg { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .badge-pill {
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 8px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .badge-start { background: var(--violet-100); color: var(--violet-700); }
+  .badge-turn { background: #FFF0F0; color: var(--red); }
+
+  /* Bottom nav */
+  .bottom-nav {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 70px;
+    background: var(--white);
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    padding: 0 10px;
+  }
+  .nav-item {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    color: var(--text-muted);
+    font-size: 10px;
+    cursor: pointer;
+  }
+  .nav-item.active { color: var(--violet-600); }
+  .nav-item svg { width: 22px; height: 22px; }
+
+  /* =========================================================
+     SCREEN 2: CONVERSATION
+     ========================================================= */
+  .s2 { background: var(--violet-50); }
+
+  .s2-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px 12px;
+    background: var(--white);
+    border-bottom: 1px solid var(--border);
+  }
+  .back-btn {
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-dark); cursor: pointer; border: none; background: none;
+  }
+  .s2-avatar {
+    width: 38px; height: 38px; border-radius: 50%; object-fit: cover;
+  }
+  .s2-name { font-size: 15px; font-weight: 700; }
+  .s2-status { font-size: 11px; color: var(--text-muted); }
+  .s2-status .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--online); margin-right: 3px; }
+  .s2-header .spacer { flex: 1; }
+  .s2-header .call-actions { display: flex; gap: 6px; }
+  .call-btn {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: var(--violet-50);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--violet-600); border: none; cursor: pointer;
+  }
+
+  /* Match profile card */
+  .match-profile {
+    margin: 16px;
+    background: var(--white);
+    border-radius: 20px;
+    padding: 18px;
+    text-align: center;
+    box-shadow: 0 4px 14px rgba(91,33,182,0.06);
+  }
+  .mp-avatar-wrap {
+    width: 70px; height: 70px; margin: 0 auto 8px;
+    border-radius: 50%;
+    padding: 3px;
+    background: linear-gradient(135deg, var(--violet-500), var(--violet-300));
+    position: relative;
+  }
+  .mp-avatar-wrap img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; border: 2px solid var(--white); }
+  .matched-badge {
+    position: absolute; bottom: -2px; left: 50%; transform: translateX(-50%);
+    background: var(--violet-600);
+    color: var(--white);
+    font-size: 9px; font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 10px;
+    white-space: nowrap;
+  }
+  .mp-name { font-size: 17px; font-weight: 800; margin-top: 10px; }
+  .mp-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+  .extend-row {
+    margin: 12px 16px 0;
+    background: var(--white);
+    border-radius: 16px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 2px 10px rgba(91,33,182,0.05);
+  }
+  .extend-text .t1 { font-size: 13px; font-weight: 700; }
+  .extend-text .t2 { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+  .extend-btn {
+    background: var(--text-dark);
+    color: var(--white);
+    border: none;
+    padding: 10px 18px;
+    border-radius: 12px;
+    font-size: 13px; font-weight: 700;
+    cursor: pointer;
+  }
+
+  /* Date divider */
+  .date-divider {
+    display: flex; align-items: center; gap: 12px;
+    margin: 22px 16px 16px;
+  }
+  .date-divider .line { flex: 1; height: 1px; background: var(--violet-200); }
+  .date-divider .label { font-size: 10px; color: var(--violet-500); font-weight: 600; }
+
+  /* Messages */
+  .messages { padding: 0 16px 180px; display: flex; flex-direction: column; gap: 12px; }
+  .msg-row { display: flex; gap: 8px; align-items: flex-end; }
+  .msg-row.in { justify-content: flex-start; }
+  .msg-row.out { justify-content: flex-end; }
+  .msg-avatar { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+  .bubble {
+    max-width: 72%;
+    padding: 11px 14px;
+    border-radius: 18px;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  .bubble.in {
+    background: var(--white);
+    color: var(--text-dark);
+    border-bottom-left-radius: 6px;
+  }
+  .bubble.out {
+    background: var(--violet-600);
+    color: var(--white);
+    border-bottom-right-radius: 6px;
+  }
+  .msg-time { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; }
+  .msg-meta { display: flex; flex-direction: column; align-items: flex-start; }
+  .msg-row.out .msg-meta { align-items: flex-end; }
+
+  /* Reactions */
+  .reactions {
+    display: flex; gap: 14px;
+    background: var(--white);
+    padding: 8px 14px;
+    border-radius: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    align-self: flex-start;
+    margin-top: -4px;
+  }
+  .reactions .r { font-size: 18px; cursor: pointer; }
+
+  /* Quick actions */
+  .quick-actions {
+    display: flex; gap: 10px;
+    padding: 0 16px;
+    margin-bottom: 12px;
+  }
+  .qa-btn {
+    flex: 1;
+    background: var(--white);
+    border: 1px solid var(--border);
+    padding: 12px;
+    border-radius: 14px;
+    font-size: 13px; font-weight: 600;
+    color: var(--text-dark);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .qa-btn:hover { border-color: var(--violet-300); }
+
+  /* Input bar */
+  .input-bar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    background: var(--white);
+    padding: 12px 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-top: 1px solid var(--border);
+  }
+  .plus-btn {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--violet-600);
+    color: var(--white);
+    display: flex; align-items: center; justify-content: center;
+    border: none; cursor: pointer; font-size: 20px;
+  }
+  .cam-btn {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--violet-50);
+    color: var(--violet-600);
+    display: flex; align-items: center; justify-content: center;
+    border: none; cursor: pointer;
+  }
+  .input-field {
+    flex: 1;
+    background: var(--violet-50);
+    border-radius: 20px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--text-muted);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .mic-btn {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--violet-100);
+    color: var(--violet-700);
+    display: flex; align-items: center; justify-content: center;
+    border: none; cursor: pointer;
+  }
+
+  /* =========================================================
+     SCREEN 3: VIDEO CALL
+     ========================================================= */
+  .s3 { background: #1a1330; }
+
+  .vc-video {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+  }
+  .vc-darken {
+    position: absolute; inset: 0;
+    background: linear-gradient(to bottom, rgba(26,19,48,0.6) 0%, rgba(26,19,48,0) 25%, rgba(26,19,48,0) 55%, rgba(26,19,48,0.85) 100%);
+  }
+
+  .vc-header {
+    position: absolute;
+    top: 44px; left: 0; right: 0;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    z-index: 5;
+  }
+  .vc-header .left { display: flex; align-items: center; gap: 10px; }
+  .vc-avatar {
+    width: 38px; height: 38px; border-radius: 50%; object-fit: cover;
+    border: 2px solid var(--violet-400);
+  }
+  .vc-name { color: var(--white); font-weight: 700; font-size: 14px; }
+  .vc-time { color: rgba(255,255,255,0.7); font-size: 11px; }
+  .vc-min-btn {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: rgba(255,255,255,0.25);
+    backdrop-filter: blur(8px);
+    display: flex; align-items: center; justify-content: center;
+    border: none; cursor: pointer; color: var(--white);
+  }
+
+  /* Self pip */
+  .self-pip {
+    position: absolute;
+    bottom: 140px; right: 16px;
+    width: 100px; height: 130px;
+    border-radius: 16px;
+    overflow: hidden;
+    border: 2px solid rgba(255,255,255,0.3);
+    z-index: 5;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  }
+  .self-pip img { width: 100%; height: 100%; object-fit: cover; }
+
+  /* Controls */
+  .vc-controls {
+    position: absolute;
+    bottom: 30px; left: 0; right: 0;
+    display: flex;
+    justify-content: center;
+    gap: 14px;
+    z-index: 5;
+    padding: 0 16px;
+  }
+  .vc-ctrl {
+    width: 48px; height: 48px; border-radius: 50%;
+    background: rgba(255,255,255,0.22);
+    backdrop-filter: blur(10px);
+    display: flex; align-items: center; justify-content: center;
+    border: none; cursor: pointer; color: var(--white);
+  }
+  .vc-ctrl svg { width: 20px; height: 20px; }
+  .vc-ctrl.hangup {
+    background: var(--red);
+    width: 56px; height: 48px;
+    border-radius: 24px;
+  }
+
+  /* Helper for self-pip top gradient on video call status bar */
+  .s3 .status-bar { color: var(--white); position: relative; z-index: 6; }
+  .s3 .status-bar .icons svg { fill: var(--white); }
+
+  @media (max-width: 1100px) {
+    .stage { gap: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="stage">
+
+  <!-- ================= SCREEN 1 : CHAT LIST ================= -->
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="screen s1">
+      <div class="status-bar">
+        <span>9:41</span>
+        <span class="icons">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 22h20V2L2 22z"/></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3C7 3 3 7 3 12s4 9 9 9 9-4 9-9-4-9-9-9zm0 16c-3.9 0-7-3.1-7-7s3.1-7 7-7 7 3.1 7 7-3.1 7-7 7z"/></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 5H7v14h10V5zm-2 12H9V7h6v10z"/></svg>
+        </span>
+      </div>
+
+      <div class="s1-header">
+        <h1>Chat</h1>
+        <div class="actions">
+          <button class="icon-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+          </button>
+          <button class="icon-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Stories -->
+      <div class="stories">
+        <div class="story">
+          <div class="story-ring"><img src="https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=young%20asian%20woman%20wearing%20white%20baseball%20cap%2C%20smiling%2C%20close%20up%20portrait%2C%20soft%20lighting&image_size=square" alt="Medina"></div>
+          <span>Medina Amandel</span>
+        </div>
+        <div class="story">
+          <div class="story-ring"><img src="https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=young%20asian%20woman%20with%20long%20dark%20hair%2C%20natural%20makeup%2C%20portrait%2C%20soft%20lighting&image_size=square" alt="Ayu"></div>
+          <span>Ayu Rendang</span>
+        </div>
+        <div class="story">
+          <div class="story-ring"><img src="https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=young%20woman%20with%20hand%20on%20cheek%2C%20asian%2C%20portrait%2C%20soft%20lighting&image_size=square" alt="Putri"></div>
+          <span>Putri Kikil</span>
+        </div>
+        <div class="story">
+          <div class="story-ring muted"><img src="https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=young%20woman%20portrait%2C%20asian%2C%20wearing%20earrings%2C%20soft%20lighting&image_size=square" alt="Dinda"></div>
+          <span>Dinda Sariawan</span>
+        </div>
+        <div class="story">
+          <div class="story-ring muted"><img src="https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=young%20woman%20portrait%2C%20asian%2C%20smiling%2C%20soft%20lighting&image_size=square" alt="Amand"></div>
+          <span>Amand...</span>
+        </div>
+      </div>
+
+      <!-- Best Matches -->
+      <div class="section-title">Best Matches</div>
+      <div class="matches">
+        <div class="match-card">
+          <img src="https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=young%20asian%20woman%20wearing%20white%20baseball%20cap%2C%20smiling%2C%20portrait%20photo%2C%20soft%20natural%20lighting&image_size=portrait_4_3" alt="Medina">
+          <div class="overlay">
+            <div class="name">Medina Amandel</div>
+            <div class="tags">
+              <span class="tag">🎮 Game</span>
+              <span class="tag">🎤 Singing</span>
+            </div>
+          </div>
+        </div>
+        <div class="match-card">
+          <img src="https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=young%20asian%20woman%20taking%20mirror%20selfie%2C%20soft%20lighting%2C%20portrait&image_size=portrait_4_3" alt="Dinda">
+          <div class="overlay">
+            <div class="name">Dinda Sariawan</div>
+            <div class="tags">
+              <span class="tag">📍 Japan</span>
+              <span class="tag">🎮 Game</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <div class="tab active">Chat</div>
+        <div class="tab">Activity</div>
+      </div>
+
+      <!-- Chat list -->
+      <div class="chat-list">
+        <div class="chat-item">
+          <img class="chat-avatar" src="https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=young%20asian%20woman%20wearing%20white%20baseball%20cap%2C%20smiling%2C%20portrait%2C%20soft%20lighting&image_size=square" alt="">
+          <div class="chat-info">
+            <div class="chat-top"><span class="chat-name">Medina Amandel</span><span class="chat-time">12:00</span></div>
+            <div class="chat-bottom"><span class="chat-msg">Start the chat with Rizal Dubur</span><span class="badge-pill badge-start">Start Chat</span></div>
+          </div>
+        </div>
+        <div class="chat-item">
+          <img class="chat-avatar" src="https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=young%20asian%20woman%20with%20long%20dark%20hair%2C%20natural%20makeup%2C%20portrait%2C%20soft%20lighting&image_size=square" alt="">
+          <div class="chat-info">
+            <div class="chat-top"><span class="chat-name">Ayu Rendang</span><span class="chat-time">08:00</span></div>
+            <div class="chat-bottom"><span class="chat-msg">Mau Date sate babat?</span><span class="badge-pill badge-turn">Your Turn</span></div>
+          </div>
+        </div>
+        <div class="chat-item">
+          <img class="chat-avatar" src="https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=young%20woman%20with%20hand%20on%20cheek%2C%20asian%2C%20portrait%2C%20soft%20lighting&image_size=square" alt="">
+          <div class="chat-info">
+            <div class="chat-top"><span class="chat-name">Putri Kikil</span><span class="chat-time">1 days ago</span></div>
+            <div class="chat-bottom"><span class="chat-msg">✓ Takut om om</span></div>
+          </div>
+        </div>
+        <div class="chat-item">
+          <img class="chat-avatar" src="https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=young%20woman%20portrait%2C%20asian%2C%20wearing%20earrings%2C%20soft%20lighting&image_size=square" alt="">
+          <div class="chat-info">
+            <div class="chat-top"><span class="chat-name">Dinda Sariawan</span><span class="chat-time">15 days ago</span></div>
+            <div class="chat-bottom"><span class="chat-msg">What are you doing this weekend?</span><span class="badge-pill badge-turn">Your Turn</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom nav -->
+      <div class="bottom-nav">
+        <div class="nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          <span>Home</span>
+        </div>
+        <div class="nav-item active">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+          <span>Chat</span>
+        </div>
+        <div class="nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+          <span>Matches</span>
+        </div>
+        <div class="nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span>Profile</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= SCREEN 2 : CONVERSATION ================= -->
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="screen s2">
+      <div class="status-bar">
+        <span>9:41</span>
+        <span class="icons">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 22h20V2L2 22z"/></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3C7 3 3 7 3 12s4 9 9 9 9-4 9-9-4-9-9-9zm0 16c-3.9 0-7-3.1-7-7s3.1-7 7-7 7 3.1 7 7-3.1 7-7 7z"/></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 5H7v14h10V5zm-2 12H9V7h6v10z"/></svg>
+        </span>
+      </div>
+
+      <div class="s2-header">
+        <button class="back-btn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <img class="s2-avatar" src="https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=young%20asian%20woman%20wearing%20white%20baseball%20cap%2C%20smiling%2C%20portrait%2C%20soft%20lighting&image_size=square" alt="">
+        <div>
+          <div class="s2-name">Medina Amandel</div>
+          <div class="s2-status"><span class="dot"></span>Online 3 minutes ago</div>
+        </div>
+        <div class="spacer"></div>
+        <div class="call-actions">
+          <button class="call-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+          </button>
+          <button class="call-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Match profile card -->
+      <div class="match-profile">
+        <div class="mp-avatar-wrap">
+          <img src="https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=young%20asian%20woman%20wearing%20white%20baseball%20cap%2C%20smiling%2C%20portrait%2C%20soft%20lighting&image_size=square" alt="">
+          <span class="matched-badge">Matched 💕</span>
+        </div>
+        <div class="mp-name">Medina Amandel</div>
+        <div class="mp-sub">Let's start the conversation with a spark ✨</div>
+      </div>
+
+      <!-- Extend row -->
+      <div class="extend-row">
+        <div class="extend-text">
+          <div class="t1">Need more time?</div>
+          <div class="t2">Extend this match for 24 hours</div>
+        </div>
+        <button class="extend-btn">Extend</button>
+      </div>
+
+      <!-- Date divider -->
+      <div class="date-divider">
+        <div class="line"></div>
+        <span class="label">Today, 10 May</span>
+        <div class="line"></div>
+      </div>
+
+      <!-- Messages -->
+      <div class="messages">
+        <div class="msg-row in">
+          <img class="msg-avatar" src="https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=young%20asian%20woman%20wearing%20white%20baseball%20cap%2C%20smiling%2C%20portrait%2C%20soft%20lighting&image_size=square" alt="">
+          <div class="msg-meta">
+            <div class="msg-time">10:30 AM</div>
+            <div class="bubble in">I go up to about 50 characters &amp; then I'm fixed</div>
+          </div>
+        </div>
+        <div class="reactions">
+          <span class="r">👍</span>
+          <span class="r">😂</span>
+          <span class="r">🤣</span>
+          <span class="r">❤️</span>
+          <span class="r">😮</span>
+        </div>
+      </div>
+
+      <!-- Quick actions -->
+      <div class="quick-actions">
+        <button class="qa-btn">👋 Send Sticker</button>
+        <button class="qa-btn">Say Hi!</button>
+      </div>
+
+      <!-- Input bar -->
+      <div class="input-bar">
+        <button class="plus-btn">+</button>
+        <button class="cam-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        </button>
+        <div class="input-field">
+          <span>Make your first move</span>
+          <span style="color:var(--text-muted)">😊</span>
+        </div>
+        <button class="mic-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= SCREEN 3 : VIDEO CALL ================= -->
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="screen s3">
+      <img class="vc-video" src="https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=young%20asian%20woman%20wearing%20white%20t-shirt%2C%20smiling%2C%20looking%20at%20camera%2C%20video%20call%20portrait%2C%20soft%20lighting&image_size=portrait_16_9" alt="video">
+      <div class="vc-darken"></div>
+
+      <div class="status-bar">
+        <span>9:41</span>
+        <span class="icons">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 22h20V2L2 22z"/></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3C7 3 3 7 3 12s4 9 9 9 9-4 9-9-4-9-9-9zm0 16c-3.9 0-7-3.1-7-7s3.1-7 7-7 7 3.1 7 7-3.1 7-7 7z"/></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 5H7v14h10V5zm-2 12H9V7h6v10z"/></svg>
+        </span>
+      </div>
+
+      <div class="vc-header">
+        <div class="left">
+          <img class="vc-avatar" src="https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=young%20asian%20woman%20wearing%20white%20baseball%20cap%2C%20smiling%2C%20portrait%2C%20soft%20lighting&image_size=square" alt="">
+          <div>
+            <div class="vc-name">Medina Amandel</div>
+            <div class="vc-time">13:90</div>
+          </div>
+        </div>
+        <button class="vc-min-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+        </button>
+      </div>
+
+      <!-- Self video pip -->
+      <div class="self-pip">
+        <img src="https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=surprised%20young%20man%20wearing%20white%20t-shirt%2C%20portrait%2C%20selfie%20angle%2C%20soft%20lighting&image_size=portrait_4_3" alt="self">
+      </div>
+
+      <!-- Controls -->
+      <div class="vc-controls">
+        <button class="vc-ctrl">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+        </button>
+        <button class="vc-ctrl">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 5c-3.86 0-7 3.14-7 7s3.14 7 7 7 7-3.14 7-7-3.14-7-7-7zm0 12c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+        </button>
+        <button class="vc-ctrl">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg>
+        </button>
+        <button class="vc-ctrl">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+        </button>
+        <button class="vc-ctrl hangup">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08c-.18-.17-.29-.42-.29-.7 0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.1-.7-.28-.79-.74-1.69-1.36-2.67-1.85-.33-.16-.56-.5-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

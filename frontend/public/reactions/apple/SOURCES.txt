@@ -1,0 +1,10 @@
+angry: https://emojigraph.org/media/144/apple/pouting-face_1f621.png
+haha: https://emojigraph.org/media/144/apple/grinning-squinting-face_1f606.png
+wow: https://emojigraph.org/media/144/apple/face-with-open-mouth_1f62e.png
+love: https://emojigraph.org/media/144/apple/red-heart_2764-fe0f.png
+care: https://emojigraph.org/media/144/apple/smiling-face-with-hearts_1f970.png
+sad: https://emojigraph.org/media/144/apple/crying-face_1f622.png
+like: https://emojigraph.org/media/144/apple/thumbs-up_1f44d.png
+
+Source: https://emojigraph.org/apple/
+Artwork: Apple. Emoji images remain copyright of their respective creators.

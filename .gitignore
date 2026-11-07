@@ -1,0 +1,14 @@
+
+# Local runtime and credentials
+**/node_modules/
+**/.env
+frontend/dist/
+backend/.local-postgres/
+# Developer tools and generated previews
+.continue/
+.trae/
+.vite/
+*-preview.png
+*.log
+**/.env.*
+!**/.env.example
