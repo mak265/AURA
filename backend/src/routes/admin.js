@@ -2,7 +2,7 @@ const express=require('express'),bcrypt=require('bcryptjs'),db=require('../db');
 const {authenticate}=require('../middleware/auth'),{audit,requireManagement,superOnly,safeError}=require('../management');
 const router=express.Router();router.use(authenticate,requireManagement);
 router.use('/reports',require('./adminEvidence'));
-const userFields=`u.id,u.email,u.real_name,u.age,u.gender,u.city,u.management_role,u.created_at,u.last_active_at,u.active_since,u.active_seconds,u.banned_at,u.admin_restricted_until,u.ban_reason,u.admin_restriction_reason,
+const userFields=`u.id,u.email,u.real_name,u.age,u.gender,u.religion,u.city,u.management_role,u.created_at,u.last_active_at,u.active_since,u.active_seconds,u.banned_at,u.admin_restricted_until,u.ban_reason,u.admin_restriction_reason,
  EXISTS(SELECT 1 FROM user_presence p WHERE p.user_id=u.id AND p.expires_at>NOW()) AS active_now,
  (SELECT count(*)::int FROM account_warnings w WHERE w.user_id=u.id) AS warning_count`;
 const pageOf=req=>Math.max(0,(Number(req.query.page)||1)-1)*20;
@@ -30,12 +30,18 @@ router.get('/overview',async(req,res)=>{try{
   db.query(`SELECT id,kind,reason,status,created_at FROM safety_reports ORDER BY created_at DESC LIMIT 5`)
  ]);res.json({stats:stats.rows[0],activity:activity.rows,report_mix:reports.rows,recent_reports:recent.rows});
  }catch(error){safeError(res,error);}});
+router.get('/user-filter-options',async(req,res)=>{try{const result=await db.query("SELECT DISTINCT gender,religion FROM users WHERE management_role='user'");res.json({genders:[...new Set(result.rows.map(row=>row.gender).filter(Boolean))].sort(),religions:[...new Set(result.rows.map(row=>row.religion).filter(Boolean))].sort()});}catch(error){safeError(res,error);}});
 router.get('/users',async(req,res)=>{try{
  const q=typeof req.query.q==='string'?req.query.q.trim().slice(0,100):'',filter=req.query.filter||'all';
  if(!['all','active','inactive','restricted','banned','warned'].includes(filter))return res.status(400).json({error:'Invalid user filter.'});
+ const parseAge=value=>value===undefined||value===''?null:typeof value==='string'&&/^\d+$/.test(value)?Number(value):NaN;
+ const min=parseAge(req.query.age_min),max=parseAge(req.query.age_max),gender=req.query.gender||'',religion=req.query.religion||'';
+ if([min,max].some(value=>value!==null&&(!Number.isInteger(value)||value<0||value>120))||(min!==null&&max!==null&&min>max)||typeof gender!=='string'||gender.length>60||typeof religion!=='string'||religion.length>100)return res.status(400).json({error:'Choose a valid age range from 0 to 120 and valid gender/religion filters.'});
+ const values=[q,filter,min,max,gender,religion];
  const where=`u.management_role='user' AND ($1='' OR POSITION(LOWER($1) IN LOWER(COALESCE(u.real_name,'')||' '||u.email||' '||COALESCE(a.aura_name,'')))>0)
+ AND ($3::int IS NULL OR u.age>=$3) AND ($4::int IS NULL OR u.age<=$4) AND ($5::text='' OR u.gender=$5) AND ($6::text='' OR u.religion=$6)
  AND ($2='all' OR ($2='active' AND EXISTS(SELECT 1 FROM user_presence p WHERE p.user_id=u.id AND p.expires_at>NOW())) OR ($2='inactive' AND NOT EXISTS(SELECT 1 FROM user_presence p WHERE p.user_id=u.id AND p.expires_at>NOW())) OR ($2='restricted' AND u.admin_restricted_until>NOW()) OR ($2='banned' AND u.banned_at IS NOT NULL) OR ($2='warned' AND EXISTS(SELECT 1 FROM account_warnings w WHERE w.user_id=u.id)))`;
- const [rows,count]=await Promise.all([db.query(`SELECT ${userFields},a.aura_name FROM users u LEFT JOIN auras a ON a.user_id=u.id WHERE ${where} ORDER BY u.created_at DESC,u.id DESC LIMIT 20 OFFSET $3`,[q,filter,pageOf(req)]),db.query(`SELECT count(*)::int AS total FROM users u LEFT JOIN auras a ON a.user_id=u.id WHERE ${where}`,[q,filter])]);res.json({users:rows.rows,total:count.rows[0].total});
+ const [rows,count]=await Promise.all([db.query(`SELECT ${userFields},a.aura_name FROM users u LEFT JOIN auras a ON a.user_id=u.id WHERE ${where} ORDER BY u.created_at DESC,u.id DESC LIMIT 20 OFFSET $7`,[...values,pageOf(req)]),db.query(`SELECT count(*)::int AS total FROM users u LEFT JOIN auras a ON a.user_id=u.id WHERE ${where}`,values)]);res.json({users:rows.rows,total:count.rows[0].total});
  }catch(error){safeError(res,error);}});
 router.get('/users/:id',async(req,res)=>{let client;try{
  client=await db.pool.connect();await client.query('BEGIN');const result=await client.query(`SELECT ${userFields},a.aura_name,a.bio FROM users u LEFT JOIN auras a ON a.user_id=u.id WHERE u.id=$1 AND u.management_role='user'`,[Number(req.params.id)]);

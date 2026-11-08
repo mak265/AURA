@@ -594,3 +594,21 @@ test('Soul Talk reports retain text context and report media stays within the 10
  const report=await request(9802,'/reports','POST',{kind:'user',matchId:match,reason:'other'});assert.equal(report.status,201);
  const budget=(await pool.query('SELECT sum(octet_length(attachment))::bigint AS bytes,count(*) FILTER(WHERE media_omitted)::int AS omitted FROM report_message_evidence WHERE report_id=$1',[report.body.id])).rows[0];assert.equal(Number(budget.bytes),10*1024*1024);assert.equal(budget.omitted,1);
 });
+
+test('management demographic filters compose with search/status and paginate after filtering',async()=>{
+ for(const [id,age,gender,religion] of [[9901,25,'Female','Catholic'],[9902,33,'Female','Catholic'],[9903,25,'Male','Catholic'],[9904,25,'Female','Muslim'],[9905,null,null,null],[9906,16,'Female','Catholic']]){
+  await pool.query('INSERT INTO users(id,email,password_hash,real_name,age,gender,religion) VALUES($1,$2,$3,$4,$5,$6,$7)',[id,`${id}@example.com`,'test','Demographic QA '+id,age,gender,religion]);
+  await pool.query('INSERT INTO auras(user_id,aura_name) VALUES($1,$2)',[id,'Demographic QA '+id]);
+ }
+ const path='/admin/users?q=Demographic%20QA&age_min=20&age_max=30&gender=Female&religion=Catholic';
+ let result=await request(9501,path);assert.equal(result.status,200);assert.equal(result.body.total,1);assert.equal(result.body.users[0].id,9901);assert.equal(result.body.users[0].religion,'Catholic');
+ assert.equal((await request(9501,path+'&filter=active')).body.total,0);
+ assert.equal((await request(9501,path+'&filter=inactive')).body.total,1);
+ assert.equal((await request(9501,'/admin/users?q=Demographic%20QA&age_max=17')).body.users[0].id,9906);
+ assert.equal((await request(9901,path)).status,403);
+ for(const query of ['age_min=50&age_max=20','age_min=-1','age_max=121','age_min=abc','age_min=20.5','age_min[]=20','gender[]=Female'])assert.equal((await request(9501,'/admin/users?'+query)).status,400,query);
+ assert.equal((await request(9501,'/admin/users?religion='+encodeURIComponent("Catholic' OR 1=1 --"))).body.total,0);
+ const options=(await request(9501,'/admin/user-filter-options')).body;assert.ok(options.genders.includes('Female'));assert.ok(options.religions.includes('Catholic'));
+ for(let i=0;i<23;i++)await pool.query('INSERT INTO users(id,email,password_hash,real_name,age,gender,religion) VALUES($1,$2,$3,$4,25,$5,$6)',[10000+i,`demo${i}@example.com`,'test','Demographic QA page '+i,'Female','Catholic']);
+ result=await request(9501,path+'&page=2');assert.equal(result.body.total,24);assert.equal(result.body.users.length,4);assert.ok(result.body.users.every(user=>user.age===25&&user.gender==='Female'&&user.religion==='Catholic'));
+});
