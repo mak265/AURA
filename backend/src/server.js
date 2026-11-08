@@ -52,23 +52,13 @@ io.use(async (socket, next) => {
     socket.userId = jwt.verify(socket.handshake.auth?.token, process.env.JWT_SECRET).userId;
     const account=await db.query('SELECT banned_at,auth_version FROM users WHERE id=$1',[socket.userId]);
     const decoded=jwt.verify(socket.handshake.auth?.token,process.env.JWT_SECRET);
+    socket.authVersion=decoded.version||0;
     if(!account.rowCount||account.rows[0].banned_at||(decoded.version||0)!==account.rows[0].auth_version)return next(new Error('Account unavailable.'));
     next();
   } catch { next(new Error('Authentication required.')); }
 });
 io.on('connection', socket => {
-  socket.on('join:match', async input => {
-    const matchId = Number(typeof input === 'object' ? input?.matchId : input);
-    if (!Number.isInteger(matchId) || matchId <= 0) return;
-    try {
-      const member = await db.query('SELECT id FROM matches WHERE id=$1 AND (user1_id=$2 OR user2_id=$2)', [matchId,socket.userId]);
-      if (member.rowCount) socket.join(`match:${matchId}`);
-    } catch (error) { console.error('Join conversation error:',error.message); }
-  });
-  socket.on('typing', data => {
-    const room = `match:${Number(data?.matchId)}`;
-    if (socket.rooms.has(room)) socket.to(room).emit('typing', { matchId: Number(data.matchId), userId: socket.userId });
-  });
+  require('./conversationSocket').registerConversationSocket(socket);
 });
 
 require('./reportEvidence').startEvidenceCleanup();

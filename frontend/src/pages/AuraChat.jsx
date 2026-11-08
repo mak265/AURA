@@ -1,3 +1,7 @@
+import MessageArrival from '../components/MessageArrival';
+import useMessageArrivals from '../hooks/useMessageArrivals';
+import TypingIndicator from '../components/TypingIndicator';
+import useConversationSocket from '../hooks/useConversationSocket';
 import FarmingLobby from '../components/FarmingLobby';
 import RandomAudioCall from '../components/RandomAudioCall';
 import ReportButton from '../components/ReportButton';
@@ -33,7 +37,12 @@ export default function AuraChat() {
   const callStream=useRef(null);
   const stopMicrophone=()=>{callStream.current?.getTracks().forEach(t=>t.stop());callStream.current=null;};
   const [session, setSession] = useState(null);
-  const [messages, setMessages] = useState([]);
+  const [messages, storeMessages] = useState([]);
+  const messageRevision=useRef(0);
+  const setMessages=update=>{messageRevision.current++;storeMessages(update);};
+  const [historyLoaded,setHistoryLoaded]=useState(false);
+  const arrivals=useMessageArrivals(messages,session?.sessionId,historyLoaded);
+  const {partnerTyping,updateTyping,stopTyping}=useConversationSocket({kind:'aura',id:session?.sessionId,myId:user?.user?.id,enabled:session?.mode==='chat'&&session?.canChat});
   const { listRef, stickToBottom } = useChatScroll(messages);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -94,8 +103,9 @@ export default function AuraChat() {
         currentSession.current = statusRes.data;
         setSession(statusRes.data);
         if (statusRes.data.canChat) {
+          const revision=messageRevision.current;
           const messagesRes = await api.get(`/aura-chat/${id}/messages`);
-          if (!cancelled && generation === searchGeneration.current) setMessages(messagesRes.data);
+          if (!cancelled && generation === searchGeneration.current) {if(revision===messageRevision.current)storeMessages(messagesRes.data);setHistoryLoaded(true);}
         }
         if (statusRes.data.status === 'matched' && statusRes.data.matchId) {
           navigate(`/chat/${statusRes.data.matchId}`);
@@ -174,6 +184,7 @@ export default function AuraChat() {
     if (!session?.sessionId || !input.trim()) return;
 
     stickToBottom();
+    stopTyping();
     const content = input;
     setInput('');
     try {
@@ -222,6 +233,8 @@ export default function AuraChat() {
   };
 
   const endChat = async () => {
+    stopTyping();
+    setHistoryLoaded(false);
     stopMicrophone();
     const current = currentSession.current;
     searchGeneration.current += 1;
@@ -371,14 +384,15 @@ export default function AuraChat() {
           </div>
         ) : (
           messages.map(msg => (
-            <div key={msg.id} className={`flex ${msg.sender_id === session.partner?.id ? 'justify-start' : 'justify-end'}`}>
+            <MessageArrival key={msg.id} mine={msg.sender_id===user?.user?.id} fresh={arrivals.has(msg.id)} className={`flex ${msg.sender_id === session.partner?.id ? 'justify-start' : 'justify-end'}`}>
               <div className={`max-w-[75%] px-3.5 py-2.5 rounded-2xl text-sm ${msg.sender_id === session.partner?.id ? 'bg-aura-card-2 text-gray-200 rounded-bl-md' : 'bg-gradient-to-br from-aura-violet to-aura-pink text-white rounded-br-md'}`}>
                 <p>{msg.content}</p>
                 {msg.sender_id === user?.user?.id && <p className="text-[10px] text-right mt-1 opacity-80">{messageStatus(msg)}</p>}
               </div>
-            </div>
+            </MessageArrival>
           ))
         )}
+        <TypingIndicator visible={partnerTyping} name={session.partner?.aura_name||'Your Aura'}/>
       </div>}
 
       {!chatEnded && session.mode!=='call' ? (
@@ -387,7 +401,8 @@ export default function AuraChat() {
             <input
               className="aura-input flex-1"
               value={input}
-              onChange={e => setInput(e.target.value)}
+              onChange={e => {setInput(e.target.value);updateTyping(e.target.value);}}
+              onBlur={stopTyping}
               onKeyDown={e => e.key === 'Enter' && sendMessage()}
               placeholder="Type anonymously..."
             />

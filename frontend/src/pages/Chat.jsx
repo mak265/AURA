@@ -1,3 +1,7 @@
+import MessageArrival from '../components/MessageArrival';
+import useMessageArrivals from '../hooks/useMessageArrivals';
+import TypingIndicator from '../components/TypingIndicator';
+import useConversationSocket from '../hooks/useConversationSocket';
 import ReportButton from '../components/ReportButton';
 import { useDeviceSettings } from '../hooks/useDeviceSettings';
 import MessageReactions from '../components/MessageReactions';
@@ -10,7 +14,6 @@ import useChatScroll from '../hooks/useChatScroll';
 import useMessageReceipts, { messageStatus } from '../hooks/useMessageReceipts';
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import io from 'socket.io-client';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
@@ -29,7 +32,9 @@ export default function Chat() {
   const { user } = useAuth();
   const [highRisk,setHighRisk]=useState(false);
   const [presence,setPresence]=useState(null);
-  const [messages, setMessages] = useState([]);
+  const [messages, storeMessages] = useState([]);
+  const messageRevision=useRef(0);
+  const setMessages=update=>{messageRevision.current++;storeMessages(update);};
   const [input, setInput] = useState('');
   const [match, setMatch] = useState(null);
   const [revealStatus, setRevealStatus] = useState('none');
@@ -37,7 +42,14 @@ export default function Chat() {
   const [revealedIdentity, setRevealedIdentity] = useState(null);
   const [soulGameCompleted, setSoulGameCompleted] = useState(false);
   const [sendError, setSendError] = useState('');
-  const socketRef = useRef(null);
+  const [historyLoaded,setHistoryLoaded]=useState(false);
+  const arrivals=useMessageArrivals(messages,matchId,historyLoaded);
+  const {partnerTyping,updateTyping,stopTyping}=useConversationSocket({kind:'match',id:matchId,myId:user?.user?.id,
+    onMessage:msg=>setMessages(prev=>prev.some(m=>m.id===msg.id)?prev:[...prev,msg]),
+    onUnsent:({messageId})=>setMessages(prev=>prev.map(m=>m.id===messageId?{...m,unsent_at:new Date().toISOString(),content:'',kind:'text',reactions:[]}:m)),
+    onReactions:({messageId,reactions})=>setMessages(prev=>prev.map(m=>m.id===messageId?{...m,reactions}:m)),
+    onReveal:data=>{if(data.mutual)loadMatch();},onUnlocked:()=>setSoulGameCompleted(true)
+  });
   const { listRef, stickToBottom } = useChatScroll(messages);
 
   const myId = user?.user?.id;
@@ -48,9 +60,10 @@ export default function Chat() {
     const refresh = async () => {
       if (fetching) return;
       fetching = true;
+      const revision=messageRevision.current;
       try {
         const [response,status] = await Promise.all([api.get(`/matches/${matchId}/messages`),api.get(`/matches/${matchId}/presence`)]);
-        if (active) {setMessages(response.data);setPresence(status.data);}
+        if (active) {if(revision===messageRevision.current)storeMessages(response.data);setHistoryLoaded(true);setPresence(status.data);}
       } catch (error) { console.error(error); }
       finally { fetching = false; }
     };
@@ -62,13 +75,7 @@ export default function Chat() {
   useEffect(() => {
     window.scrollTo(0, 0);
     loadMatch();
-    connectSocket();
     loadSoulGameStatus();
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-      }
-    };
   }, [matchId]);
 
   const loadSoulGameStatus = async () => {
@@ -83,26 +90,6 @@ export default function Chat() {
     } catch (err) {
       console.error(err);
     }
-  };
-
-  const connectSocket = () => {
-    const token = localStorage.getItem('aura_token');
-    const socket = io('http://localhost:5000', { auth: { token } });
-    socketRef.current = socket;
-    socket.emit('join:match', { matchId });
-    socket.on('message', (msg) => {
-      setMessages(prev => prev.some(message => message.id === msg.id) ? prev : [...prev, msg]);
-    });
-    socket.on('message:unsent', ({messageId}) => setMessages(previous=>previous.map(message=>message.id===messageId?{...message,unsent_at:new Date().toISOString(),content:'',kind:'text',reactions:[]}:message)));
-    socket.on('message:reactions', ({messageId,reactions}) => setMessages(previous=>previous.map(message=>message.id===messageId?{...message,reactions}:message)));
-    socket.on('reveal:update', (data) => {
-      if (data.mutual) {
-        loadMatch();
-      }
-    });
-    socket.on('soul_game:completed', () => {
-      setSoulGameCompleted(true);
-    });
   };
 
   const loadMatch = async () => {
@@ -120,6 +107,7 @@ export default function Chat() {
 
   const sendMessage = async (text) => {
     if (!text.trim()) return;
+    stopTyping();
     stickToBottom();
     setInput('');
     setSendError('');
@@ -249,14 +237,15 @@ export default function Chat() {
             </div>
           )}
           {messages.map(msg => (
-            <div key={msg.id} className={`flex ${isMe(msg) ? 'justify-end' : 'justify-start'}`}>
+            <MessageArrival key={msg.id} mine={isMe(msg)} fresh={arrivals.has(msg.id)} className={`flex ${isMe(msg) ? 'justify-end' : 'justify-start'}`}>
               <MessageReactions message={msg} myId={myId} onReact={reactToMessage} onRemove={removeMessage} className={`px-3.5 py-2.5 rounded-2xl text-sm ${isMe(msg) ? 'bg-gradient-to-br from-aura-violet to-aura-pink text-white rounded-br-md' : 'bg-aura-card-2 text-gray-200 rounded-bl-md'}`}>
                 {msg.unsent_at?<p className="italic opacity-70">This message was unsent</p>:msg.kind==='image'||msg.kind==='audio'?<MessageMedia message={msg} matchId={matchId}/>:null}
                 {msg.content&&<p>{msg.content}</p>}
                 {isMe(msg) && !msg.unsent_at && <p className="text-[10px] text-right mt-1 opacity-80">{messageStatus(msg)}</p>}
               </MessageReactions>
-            </div>
+            </MessageArrival>
           ))}
+          <TypingIndicator visible={partnerTyping} name={revealedIdentity?.realName||'Your Aura'}/>
         </div>
       )}
 
@@ -284,7 +273,8 @@ export default function Chat() {
             <input
               className="aura-input flex-1"
               value={input}
-              onChange={e => setInput(e.target.value)}
+              onChange={e => {setInput(e.target.value);updateTyping(e.target.value);}}
+              onBlur={stopTyping}
               onKeyDown={e => e.key === 'Enter' && !e.nativeEvent.isComposing && device.enterToSend && sendMessage(input)}
               placeholder="Type a message..."
             />

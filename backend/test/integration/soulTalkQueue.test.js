@@ -6,12 +6,17 @@ const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
 const db = require('../../src/db');
 const { startSearch, heartbeat } = require('../../src/soulTalkQueue');
+const {Server}=require('socket.io');
+// Use the same Socket.IO client dependency as the frontend for this full-stack test.
+const {io:connectClient}=require('../../../frontend/node_modules/socket.io-client');
+const {authorizeChannel,registerConversationSocket}=require('../../src/conversationSocket');
 const originalPool = db.pool;
 const originalQuery = db.query;
 const schema = 'soul_queue_test_' + crypto.randomBytes(8).toString('hex');
 let pool;
 let server;
 let baseUrl;
+let realtime;
 before(async () => {
   await originalPool.query(`CREATE SCHEMA ${schema}`);
   pool = new Pool({ connectionString: process.env.DATABASE_URL, options: `-c search_path=${schema}` });
@@ -46,12 +51,16 @@ before(async () => {
   app.use('/matches',require('../../src/routes/matches'));
   app.use(require('../../src/routes/auraChat'));
   server = app.listen(0, '127.0.0.1');
+  realtime=new Server(server);
+  realtime.use((socket,next)=>{try{const decoded=jwt.verify(socket.handshake.auth.token,process.env.JWT_SECRET);socket.userId=decoded.userId;socket.authVersion=decoded.version||0;next();}catch{next(new Error('Unauthorized'));}});
+  realtime.on('connection',registerConversationSocket);
   await new Promise(resolve => server.once('listening', resolve));
   baseUrl = 'http://127.0.0.1:' + server.address().port;
 });
 beforeEach(async () => { await pool.query('TRUNCATE farming_signals, farming_usage, report_message_evidence, safety_reports, account_warnings, daily_app_usage, moderation_state, hidden_messages, message_reactions, conversation_preferences, aura_sessions, matches, blocks, aura_session_answers, aura_session_messages, messages, likes, aura_requests'); await pool.query("UPDATE users SET settings='{}'::jsonb,premium_until=NULL,age=NULL,gender=NULL,religion=NULL"); });
 after(async () => {
-  if (server) await new Promise(resolve => server.close(resolve));
+  if(realtime)await new Promise(resolve=>realtime.close(resolve));
+  if (server?.listening) await new Promise(resolve => server.close(resolve));
   db.pool = originalPool;
   db.query = originalQuery;
   if (pool) await pool.end();
@@ -132,6 +141,47 @@ async function request(userId, path, body) {
   });
   return { status: response.status, body: await response.json() };
 }
+
+const socketEvent=(socket,name)=>new Promise((resolve,reject)=>{
+ const timer=setTimeout(()=>{socket.off(name,done);reject(new Error('Timed out waiting for '+name));},2000);
+ const done=value=>{clearTimeout(timer);resolve(value);};socket.once(name,done);
+});
+async function socketFor(userId){
+ const socket=connectClient(baseUrl,{auth:{token:jwt.sign({userId},process.env.JWT_SECRET)},transports:['websocket'],forceNew:true,reconnection:false});
+ await socketEvent(socket,'connect');return socket;
+}
+const joinSocket=(socket,event,payload)=>new Promise(resolve=>socket.timeout(2000).emit(event,payload,(error,result)=>resolve(error?{ok:false}:result)));
+test('real sockets deliver typing and stop events only to the other conversation participant',async()=>{
+ const match=(await pool.query('INSERT INTO matches(user1_id,user2_id,soul_game_completed) VALUES(1,2,TRUE) RETURNING id')).rows[0].id;
+ const sockets=await Promise.all([socketFor(1),socketFor(2),socketFor(3)]),[a,b,outsider]=sockets;
+ try{
+  assert.equal((await joinSocket(a,'join:match',{matchId:match})).ok,true);
+  assert.equal((await joinSocket(b,'join:match',{matchId:match})).ok,true);
+  assert.equal((await joinSocket(outsider,'join:match',{matchId:match})).ok,false);
+  let own=0,foreign=0;a.on('typing',()=>own++);outsider.on('typing',()=>foreign++);
+  const event=socketEvent(b,'typing');a.emit('typing',{kind:'match',id:match,typing:true,userId:3});
+  assert.deepEqual(await event,{kind:'match',id:match,userId:1,typing:true});
+  const stop=socketEvent(b,'typing');a.emit('typing',{kind:'match',id:match,typing:false});assert.equal((await stop).typing,false);
+  assert.equal(own,0);assert.equal(foreign,0);
+  const disconnect=socketEvent(b,'typing');a.disconnect();assert.equal((await disconnect).typing,false);
+ }finally{sockets.forEach(s=>s.disconnect());}
+});
+test('anonymous typing permits active chat members, denies waiting/call/ended sessions and rechecks blocks and token versions',async()=>{
+ const id=await startSearch(1);
+ const socket={userId:1,authVersion:0};
+ assert.equal(await authorizeChannel(socket,{kind:'aura',id}),false);
+ await startSearch(2);
+ const a=await socketFor(1),b=await socketFor(2);
+ try{
+  assert.equal((await joinSocket(a,'join:aura',{sessionId:id})).ok,true);assert.equal((await joinSocket(b,'join:aura',{sessionId:id})).ok,true);
+  const event=socketEvent(b,'typing');a.emit('typing',{kind:'aura',id,typing:true});assert.equal((await event).userId,1);
+  await pool.query('INSERT INTO blocks(blocker_id,blocked_id) VALUES(1,2)');assert.equal(await authorizeChannel(socket,{kind:'aura',id}),false);
+  await pool.query('TRUNCATE blocks');await pool.query('UPDATE users SET auth_version=1 WHERE id=1');assert.equal(await authorizeChannel(socket,{kind:'aura',id}),false);
+  await pool.query('UPDATE users SET auth_version=0 WHERE id=1');
+  await pool.query("UPDATE aura_sessions SET mode='call' WHERE id=$1",[id]);assert.equal(await authorizeChannel(socket,{kind:'aura',id}),false);
+  await pool.query("UPDATE aura_sessions SET mode='chat',status='ended' WHERE id=$1",[id]);assert.equal(await authorizeChannel(socket,{kind:'aura',id}),false);
+ }finally{a.disconnect();b.disconnect();await pool.query('UPDATE users SET auth_version=0 WHERE id=1');}
+});
 
 test('Farming separates queues and charges both people only once on successful pairing',async()=>{
  const chat=await startSearch(1),call=await startSearch(2,null,{mode:'call'});
