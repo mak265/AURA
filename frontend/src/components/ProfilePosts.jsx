@@ -1,3 +1,4 @@
+import ReportButton from './ReportButton';
 import DeletePostButton from './DeletePostButton';
 import Avatar from './Avatar';
 import PostActivity from './PostActivity';
@@ -58,7 +59,7 @@ export default function ProfilePosts({ posts, name, photo, own = false, loading 
     </form>}
     {postError && !own && <p role="alert" className="text-xs text-red-400">{postError}</p>}
     {loading ? <p className="text-sm text-gray-400 py-5">Loading posts…</p> : error ? <p role="alert" className="text-sm text-red-400">{error}</p> : posts.length === 0 ? <div className="aura-card px-5 py-10 text-center"><Icon name="feed" className="mx-auto text-aura-violet-light" size={26}/><h3 className="font-medium text-sm mt-4">{own ? 'Your story starts here' : 'No posts yet'}</h3><p className="text-xs text-gray-400 mt-2">{own ? 'Share a thought, a photo, or a small moment.' : 'Check back for a little more of their world.'}</p></div> : posts.filter(post=>!deleted.includes(post.id)).map(post => <article key={post.id} className="aura-card overflow-hidden">
-      <header className="p-4 flex items-center gap-3"><Avatar src={photo} name={name} size={35} className="profile-post-avatar"/><div><h3 className="font-medium text-sm">{name}</h3><PostAudience value={audiences[post.id] || post.visibility} onChange={own?value=>changePrivacy(post.id,value):undefined} disabled={updating===post.id}/><br/><time className="text-[10px] text-gray-400" dateTime={post.created_at}>{new Date(post.created_at).toLocaleString(undefined,{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})}</time></div>{own&&<DeletePostButton postId={post.id} onDeleted={id=>setDeleted(previous=>[...previous,id])}/>}</header>
+      <header className="p-4 flex items-center gap-3"><Avatar src={photo} name={name} size={35} className="profile-post-avatar"/><div><h3 className="font-medium text-sm">{name}</h3><PostAudience value={audiences[post.id] || post.visibility} onChange={own?value=>changePrivacy(post.id,value):undefined} disabled={updating===post.id}/><br/><time className="text-[10px] text-gray-400" dateTime={post.created_at}>{new Date(post.created_at).toLocaleString(undefined,{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})}</time></div>{own&&<DeletePostButton postId={post.id} onDeleted={id=>setDeleted(previous=>[...previous,id])}/>} {!own&&<ReportButton kind="post" postId={post.id} compact/>}</header>
       {post.caption && <p className="px-4 pb-4 text-sm leading-relaxed whitespace-pre-wrap break-words">{post.caption}</p>}
       {post.image_url && <PostImage src={post.image_url} alt="Journal photo" className="w-full max-h-[520px] object-contain bg-aura-bg"/>}
       <PostActivity post={post}/>

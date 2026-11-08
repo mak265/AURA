@@ -185,26 +185,7 @@ router.post('/block', authenticate, async (req, res) => {
 });
 
 // POST /api/profile/report
-router.post('/report', authenticate, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const { reportedId, reason, details } = req.body;
-
-    if (!reason) {
-      return res.status(400).json({ error: 'Reason is required.' });
-    }
-
-    await db.query(
-      'INSERT INTO reports (reporter_id, reported_id, reason, details) VALUES ($1, $2, $3, $4)',
-      [userId, reportedId, reason, details || null]
-    );
-
-    res.json({ message: 'Report submitted. Thank you for keeping AURA safe.' });
-  } catch (err) {
-    console.error('Report error:', err);
-    res.status(500).json({ error: 'Server error.' });
-  }
-});
+router.post('/report', authenticate, require('../reporting').submitReport);
 
 module.exports = router;
 

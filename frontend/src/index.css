@@ -859,3 +859,21 @@ button:not(:disabled) { -webkit-tap-highlight-color:transparent; }
 @keyframes dialogArrive { from { opacity:0; transform:translateY(7px) scale(.98); } to { opacity:1; transform:translateY(0) scale(1); } }
 @keyframes sheetArrive { from { opacity:.6; transform:translateY(30px); } to { opacity:1; transform:translateY(0); } }
 @media(prefers-reduced-motion:reduce) { .route-surface,.skeleton-person i,.skeleton-person b,.skeleton-line,.skeleton-photo,.page-loading-heading,dialog[open] { animation:none!important; } .nav-item svg { transition:none; } }
+.report-trigger { display:inline-flex; align-items:center; gap:9px; padding:8px; border-radius:10px; color:#a184b2; flex-shrink:0; font-size:12px; }
+.report-trigger:hover { background:#f3edf9; color:#8e58b8; }
+.report-dialog { width:min(400px,calc(100vw - 30px)); border:1px solid #eee5f5; border-radius:24px; padding:22px; background:white; color:#654775; box-shadow:0 25px 100px #27153730; }
+.report-dialog::backdrop { background:#23142e77; backdrop-filter:blur(4px); }
+.report-dialog header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+.report-dialog header>button { font-size:25px; color:#b09abc; padding:4px 8px; }
+.report-icon { width:46px; height:46px; display:flex; align-items:center; justify-content:center; background:#f2eafa; color:#9a64c5; border-radius:15px; }
+.report-dialog h2 { font-size:20px; font-weight:700; color:#553661; }
+.report-help,.report-receipt>p { font-size:12px; line-height:1.8; color:#a08aac; margin:10px 0 20px; }
+.report-dialog label { display:block; font-size:11px; color:#9275a3; margin-top:16px; }
+.report-dialog .aura-input { margin-top:7px; font-size:12px; }
+.report-count { display:block; text-align:right; font-size:9px; color:#b6a2c0; margin-top:5px; }
+.report-actions { display:flex; gap:10px; margin-top:20px; }
+.report-actions button { padding:12px; font-size:12px; }
+.report-error { font-size:11px; color:#c15e82; margin-top:10px; }
+.report-receipt>span { display:block; padding:12px; border-radius:10px; background:#f7f1fb; font-size:12px; color:#966ab5; }
+.settings-report-bug { margin:20px; background:white; border:1px solid #eee5f5; border-radius:16px; padding:8px; }
+.settings-report-bug button { width:100%; }

@@ -1,3 +1,4 @@
+import ReportButton from '../components/ReportButton';
 import { useDeviceSettings } from '../hooks/useDeviceSettings';
 import MessageReactions from '../components/MessageReactions';
 import PresenceStatus from '../components/PresenceStatus';
@@ -189,7 +190,7 @@ export default function Chat() {
           </div>
           <div className="text-[10px] text-gray-400"><PresenceStatus presence={presence}/><span>{presence?.active_now != null ? ' · ' : ''}{revealedIdentity ? 'View profile' : 'Identity hidden'}</span></div>
         </button>
-     </div>
+     <ReportButton matchId={Number(matchId)} compact/></div>
 
       {highRisk&&<div className="chat-risk-warning"><Icon name="warning" size={17}/><p>Personal warning: you marked this conversation as high risk.</p></div>}
       {/* Reveal banner */}

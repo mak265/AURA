@@ -1,3 +1,4 @@
+import ReportButton from '../components/ReportButton';
 import ContentSkeleton from '../components/ContentSkeleton';
 import Glimpses from '../components/Glimpses';
 import DeletePostButton from '../components/DeletePostButton';
@@ -454,7 +455,7 @@ export default function Feed() {
         <div className="journal-list">
           {visiblePosts.map(post => (
             <article key={post.id} className="journal-post">
-              <header className="journal-post-header"><Avatar src={post.profile_photo} name={post.aura_name} size={41} className="journal-avatar"/><div className="flex-1 min-w-0"><h2>{post.aura_name}</h2><div className="journal-post-meta"><time>{formatTime(post.created_at)}</time><span className="opacity-40">·</span><PostAudience value={post.visibility} onChange={post.user_id===user?.user?.id?value=>changeAudience(post.id,value):undefined}/></div></div>{post.user_id===user?.user?.id?<DeletePostButton postId={post.id} onDeleted={id=>setPosts(previous=>previous.filter(item=>item.id!==id))}/>:<Icon name="spark" size={15} className="journal-post-mark"/>}</header>
+              <header className="journal-post-header"><Avatar src={post.profile_photo} name={post.aura_name} size={41} className="journal-avatar"/><div className="flex-1 min-w-0"><h2>{post.aura_name}</h2><div className="journal-post-meta"><time>{formatTime(post.created_at)}</time><span className="opacity-40">·</span><PostAudience value={post.visibility} onChange={post.user_id===user?.user?.id?value=>changeAudience(post.id,value):undefined}/></div></div>{post.user_id===user?.user?.id?<DeletePostButton postId={post.id} onDeleted={id=>setPosts(previous=>previous.filter(item=>item.id!==id))}/>:<ReportButton kind="post" postId={post.id} compact/>}</header>
               {post.caption && <p className={`journal-caption ${!post.image_url?'text-post':''}`}>{post.caption}</p>}
               {/* Image (optional) */}
               {post.image_url && (

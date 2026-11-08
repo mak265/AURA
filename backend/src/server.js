@@ -41,6 +41,7 @@ app.use('/api/matches', matchesRoutes);
 app.use('/api/aura-chat', auraChatRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/feed', feedRoutes);
+app.use('/api/reports', require('./routes/reports'));
 app.use('/api/glimpses', require('./routes/glimpses'));
 app.use('/api/aura-requests', require('./routes/auraRequests'));
 

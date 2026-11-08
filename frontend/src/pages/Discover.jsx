@@ -1,3 +1,4 @@
+import ReportButton from '../components/ReportButton';
 import ContentSkeleton from '../components/ContentSkeleton';
 import Icon from '../components/Icon';
 import { ConnectionDetails } from '../components/ConnectionProfile';
@@ -257,7 +258,7 @@ export default function Discover() {
                 <span className="identity-label"><Icon name="lock" size={12}/> A little mystery, for now</span>
               </div>
               <div className="p-4">
-                <div className="text-xl font-extrabold">{card.aura_name}</div>
+                <div className="flex items-center justify-between gap-3"><div className="text-xl font-extrabold">{card.aura_name}</div><ReportButton userId={card.id} compact/></div>
                 <div className="text-xs text-gray-400 mt-0.5">
                   {[card.age, card.gender, card.city].filter(Boolean).join(' · ')}
                 </div>

@@ -39,3 +39,19 @@ Run the frontend checks with:
 Image moderation runs locally; see `backend/IMAGE_MODERATION.md` for its scope
 and limitations. The app currently targets localhost development; configure
 API/socket URLs and production secrets before deploying to a public host.
+
+## Reports
+
+Users can report a user from Discover, a revealed profile, a chat header, or
+conversation options; report another person's post from Journal/profile posts;
+and report a bug from Settings. Reports are stored in `safety_reports` with a
+pending status, reporter, reason, optional details, and an optional route path.
+The reporter receives a report ID. `GET /api/reports/mine` returns only their
+own report summaries. Reports never automatically penalize the target.
+
+Only eligible visible posts/profiles or the authenticated user's conversation
+partner can be reported. Active reports for the same target are deduplicated;
+new submissions are limited to five per ten minutes per reporter. An admin
+review dashboard or notification delivery is not implemented yet; review
+currently requires authorized database access. The legacy `/api/profile/report`
+route uses the same validation and report storage.

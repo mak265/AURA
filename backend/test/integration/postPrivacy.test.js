@@ -29,7 +29,7 @@ before(async()=>{
   for(const visibility of ['public','connections','private']){
     const result=await pool.query('INSERT INTO posts(user_id,caption,visibility) VALUES(1,$1,$1) RETURNING id',[visibility]);posts[visibility]=result.rows[0].id;
   }
-  const app=express();app.use(express.json());app.use('/glimpses',require('../../src/routes/glimpses'));app.use('/discover',require('../../src/routes/discover'));app.use('/aura-requests',require('../../src/routes/auraRequests'));app.use('/feed',require('../../src/routes/feed'));app.use('/matches',require('../../src/routes/matches'));app.use('/profile',require('../../src/routes/profile'));
+  const app=express();app.use(express.json());app.use('/reports',require('../../src/routes/reports'));app.use('/glimpses',require('../../src/routes/glimpses'));app.use('/discover',require('../../src/routes/discover'));app.use('/aura-requests',require('../../src/routes/auraRequests'));app.use('/feed',require('../../src/routes/feed'));app.use('/matches',require('../../src/routes/matches'));app.use('/profile',require('../../src/routes/profile'));
   server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));base='http://127.0.0.1:'+server.address().port;
 });
 after(async()=>{imageModeration.classifyImage=originalClassifier;if(server)await new Promise(r=>server.close(r));db.pool=originalPool;db.query=originalQuery;if(pool)await pool.end();await originalPool.query(`DROP SCHEMA ${schema} CASCADE`);await originalPool.end();});
@@ -425,4 +425,30 @@ test('Discover batches compatibility data and preserves shared-interest, age and
  for(const userId of [9401,9402])for(const interestId of [9401,9402])await pool.query('INSERT INTO user_interests(user_id,interest_id) VALUES($1,$2)',[userId,interestId]);
  const query=db.query;let count=0;db.query=(...args)=>{count++;return query(...args);};
  try{const result=await request(9401,'/discover?q=Perf');assert.equal(result.status,200);assert.equal(count,4);assert.equal(result.body.length,1);assert.equal(result.body[0].compatibility,70);assert.equal(result.body[0].interests.length,2);assert.ok(result.body[0].reasons.includes('2 shared interests'));}finally{db.query=query;}
+});
+
+test('reports validate targets, preserve privacy, deduplicate submissions, and never add strikes',async()=>{
+ const post=(await pool.query("INSERT INTO posts(user_id,caption,visibility) VALUES(9402,'Report test','public') RETURNING id")).rows[0].id;
+ const privatePost=(await pool.query("INSERT INTO posts(user_id,caption,visibility) VALUES(9402,'Private report test','private') RETURNING id")).rows[0].id;
+ assert.equal((await request(9401,'/reports','POST',{kind:'post',postId:privatePost,reason:'spam'})).status,404);
+ assert.equal((await request(9402,'/reports','POST',{kind:'post',postId:post,reason:'spam'})).status,400);
+ assert.equal((await request(9401,'/reports','POST',{kind:'user',userId:9401,reason:'harassment'})).status,400);
+ assert.equal((await request(9401,'/reports','POST',{kind:'post',postId:post,reason:'not-valid'})).status,400);
+ assert.equal((await request(9401,'/reports','POST',{kind:'bug',reason:'chat',details:'short'})).status,400);
+ assert.equal((await request(9401,'/reports','POST',{kind:'bug',reason:'chat',details:'A useful bug description',contextPath:'/chat?token=secret'})).status,400);
+ const [one,two]=await Promise.all([1,2].map(()=>request(9401,'/reports','POST',{kind:'post',postId:post,reason:'spam',details:'Repeated promotional content'})));
+ assert.equal(one.body.id,two.body.id);assert.deepEqual([one.status,two.status].sort(),[200,201]);
+ const user=await request(9401,'/reports','POST',{kind:'user',userId:9402,reason:'fake_profile'});assert.equal(user.status,201);
+ const bug=await request(9401,'/reports','POST',{kind:'bug',reason:'layout',details:'The share button is cut off on my phone.',contextPath:'/feed'});assert.equal(bug.status,201);
+ const mine=(await request(9401,'/reports/mine')).body;assert.equal(mine.length,3);assert.equal(mine[0].reporter_id,undefined);assert.equal(mine[0].reported_user_id,undefined);assert.equal(mine[0].details,undefined);
+ assert.equal((await request(9402,'/reports/mine')).body.length,0);
+ assert.equal((await pool.query('SELECT * FROM moderation_state WHERE user_id=9402')).rowCount,0);
+ const match=(await pool.query('INSERT INTO matches(user1_id,user2_id) VALUES(9401,9402) RETURNING id')).rows[0].id;
+ assert.equal((await request(9402,'/reports','POST',{kind:'user',matchId:match,reason:'harassment'})).status,201);
+ assert.equal((await request(9401,'/profile/report','POST',{reportedId:9402,reason:'fake_profile'})).body.id,user.body.id);
+ assert.equal((await request(9302,'/reports','POST',{kind:'user',matchId:match,reason:'harassment'})).status,404);
+});
+test('report spam is limited to five submissions per ten minutes',async()=>{
+ for(let i=0;i<5;i++)assert.equal((await request(9402,'/reports','POST',{kind:'bug',reason:'performance',details:'The app freezes when I open the feed '+i})).status,i<4?201:429);
+ assert.equal((await pool.query('SELECT count(*)::int AS count FROM safety_reports WHERE reporter_id=9402')).rows[0].count,5);
 });
