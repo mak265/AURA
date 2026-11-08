@@ -1,3 +1,4 @@
+import ReportButton from '../components/ReportButton';
 import useChatScroll from '../hooks/useChatScroll';
 import useMessageReceipts, { messageStatus } from '../hooks/useMessageReceipts';
 import { useAuth } from '../context/AuthContext';
@@ -320,7 +321,7 @@ export default function AuraChat() {
         </div>
         <div className={`px-3 py-1 rounded-full text-xs font-bold ${chatEnded ? 'bg-aura-card text-aura-gold' : 'bg-aura-card text-aura-violet-light'}`}>
           {chatEnded ? 'Done' : timerLabel}
-        </div>
+        </div><ReportButton sessionId={Number(session.sessionId)} compact/>
       </div>
 
       {!chatEnded && (

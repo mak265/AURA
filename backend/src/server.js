@@ -42,13 +42,17 @@ app.use('/api/aura-chat', auraChatRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/feed', feedRoutes);
 app.use('/api/reports', require('./routes/reports'));
+app.use('/api/admin',require('./routes/admin'));
 app.use('/api/glimpses', require('./routes/glimpses'));
 app.use('/api/aura-requests', require('./routes/auraRequests'));
 
 // Only authenticated participants may receive a conversation's live events.
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   try {
     socket.userId = jwt.verify(socket.handshake.auth?.token, process.env.JWT_SECRET).userId;
+    const account=await db.query('SELECT banned_at,auth_version FROM users WHERE id=$1',[socket.userId]);
+    const decoded=jwt.verify(socket.handshake.auth?.token,process.env.JWT_SECRET);
+    if(!account.rowCount||account.rows[0].banned_at||(decoded.version||0)!==account.rows[0].auth_version)return next(new Error('Account unavailable.'));
     next();
   } catch { next(new Error('Authentication required.')); }
 });

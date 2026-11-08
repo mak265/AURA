@@ -29,7 +29,7 @@ before(async()=>{
   for(const visibility of ['public','connections','private']){
     const result=await pool.query('INSERT INTO posts(user_id,caption,visibility) VALUES(1,$1,$1) RETURNING id',[visibility]);posts[visibility]=result.rows[0].id;
   }
-  const app=express();app.use(express.json());app.use('/reports',require('../../src/routes/reports'));app.use('/glimpses',require('../../src/routes/glimpses'));app.use('/discover',require('../../src/routes/discover'));app.use('/aura-requests',require('../../src/routes/auraRequests'));app.use('/feed',require('../../src/routes/feed'));app.use('/matches',require('../../src/routes/matches'));app.use('/profile',require('../../src/routes/profile'));
+  const app=express();app.use(express.json());app.use('/reports',require('../../src/routes/reports'));app.use('/admin',require('../../src/routes/admin'));app.use('/glimpses',require('../../src/routes/glimpses'));app.use('/discover',require('../../src/routes/discover'));app.use('/aura-requests',require('../../src/routes/auraRequests'));app.use('/feed',require('../../src/routes/feed'));app.use('/matches',require('../../src/routes/matches'));app.use('/profile',require('../../src/routes/profile'));
   server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));base='http://127.0.0.1:'+server.address().port;
 });
 after(async()=>{imageModeration.classifyImage=originalClassifier;if(server)await new Promise(r=>server.close(r));db.pool=originalPool;db.query=originalQuery;if(pool)await pool.end();await originalPool.query(`DROP SCHEMA ${schema} CASCADE`);await originalPool.end();});
@@ -424,7 +424,7 @@ test('Discover batches compatibility data and preserves shared-interest, age and
  for(const id of [9401,9402])await pool.query("INSERT INTO interests(id,name,emoji) VALUES($1,$2,'x')",[id,'Perf interest '+id]);
  for(const userId of [9401,9402])for(const interestId of [9401,9402])await pool.query('INSERT INTO user_interests(user_id,interest_id) VALUES($1,$2)',[userId,interestId]);
  const query=db.query;let count=0;db.query=(...args)=>{count++;return query(...args);};
- try{const result=await request(9401,'/discover?q=Perf');assert.equal(result.status,200);assert.equal(count,4);assert.equal(result.body.length,1);assert.equal(result.body[0].compatibility,70);assert.equal(result.body[0].interests.length,2);assert.ok(result.body[0].reasons.includes('2 shared interests'));}finally{db.query=query;}
+ try{const result=await request(9401,'/discover?q=Perf');assert.equal(result.status,200);assert.equal(count,5);assert.equal(result.body.length,1);assert.equal(result.body[0].compatibility,70);assert.equal(result.body[0].interests.length,2);assert.ok(result.body[0].reasons.includes('2 shared interests'));}finally{db.query=query;}
 });
 
 test('reports validate targets, preserve privacy, deduplicate submissions, and never add strikes',async()=>{
@@ -451,4 +451,75 @@ test('reports validate targets, preserve privacy, deduplicate submissions, and n
 test('report spam is limited to five submissions per ten minutes',async()=>{
  for(let i=0;i<5;i++)assert.equal((await request(9402,'/reports','POST',{kind:'bug',reason:'performance',details:'The app freezes when I open the feed '+i})).status,i<4?201:429);
  assert.equal((await pool.query('SELECT count(*)::int AS count FROM safety_reports WHERE reporter_id=9402')).rows[0].count,5);
+});
+
+test('admin RBAC denies forged roles, limits staff actions and protects audit and staff access',async()=>{
+ for(const [id,role] of [[9501,'superadmin'],[9502,'admin'],[9503,'staff'],[9504,'user'],[9505,'user']]){await pool.query('INSERT INTO users(id,email,password_hash,management_role) VALUES($1,$2,$3,$4)',[id,`${id}@example.com`,require('bcryptjs').hashSync('temporary-password-123',4),role]);await pool.query('INSERT INTO auras(user_id,aura_name) VALUES($1,$2)',[id,'Admin test '+id]);}
+ assert.equal((await request(9504,'/admin/overview')).status,403);
+ const forged=await fetch(base+'/admin/overview',{headers:{Authorization:'Bearer '+jwt.sign({userId:9504,role:'superadmin'},process.env.JWT_SECRET)}});assert.equal(forged.status,403);
+ for(const role of [9501,9502,9503])assert.equal((await request(role,'/admin/overview')).status,200);
+ assert.equal((await request(9502,'/admin/audit')).status,403);assert.equal((await request(9503,'/admin/team')).status,403);
+ assert.equal((await request(9503,'/admin/users/9504/action','POST',{action:'ban',reason:'A serious violation'})).status,403);
+ assert.equal((await request(9503,'/admin/users/9504/action','POST',{action:'warn',reason:'Please keep your messages respectful.'})).status,200);
+ const warnings=await request(9504,'/profile/warnings');assert.equal(warnings.body.length,1);assert.equal(warnings.body[0].reason,'Please keep your messages respectful.');
+ await request(9505,`/profile/warnings/${warnings.body[0].id}/acknowledge`,'POST',{});assert.equal((await request(9504,'/profile/warnings')).body.length,1);
+ await request(9504,`/profile/warnings/${warnings.body[0].id}/acknowledge`,'POST',{});assert.equal((await request(9504,'/profile/warnings')).body.length,0);
+ assert.equal((await request(9502,'/admin/users/9501/action','POST',{action:'ban',reason:'Cannot manage superadmin'})).status,403);
+ assert.equal((await request(9502,'/admin/users/9504/action','POST',{action:'restrict',hours:24,reason:'Repeated harassment confirmed.'})).status,200);
+ const rejected=await request(9504,'/feed','POST',{caption:'Hello world'});assert.equal(rejected.status,403);assert.equal(rejected.body.code,'ADMIN_RESTRICTED');
+ assert.equal((await request(9502,'/admin/users/9504/action','POST',{action:'unrestrict',reason:'Restriction reviewed and lifted.'})).status,200);
+ assert.equal((await request(9504,'/feed','POST',{caption:'Hello world'})).status,201);
+ assert.equal((await request(9502,'/admin/users/9504/action','POST',{action:'ban',reason:'Scam activity was confirmed.'})).status,200);
+ assert.equal((await request(9504,'/profile')).body.code,'ACCOUNT_BANNED');
+ assert.equal((await request(9502,'/admin/users/9504/action','POST',{action:'unban',reason:'Appeal accepted after review.'})).status,200);
+ assert.equal((await request(9504,'/profile')).status,401); // Old session stays revoked after unban.
+ assert.equal((await request(9501,'/admin/users/9505')).status,200);
+ const audit=(await request(9501,'/admin/audit')).body.events;assert.ok(audit.some(event=>event.action==='user_warn'));assert.ok(audit.some(event=>event.action==='user_ban'));assert.ok(audit.some(event=>event.action==='user_details_viewed'));
+ await assert.rejects(pool.query('DELETE FROM management_audit WHERE id=$1',[audit[0].id]),/append-only/);
+});
+test('superadmin creates management accounts, password rotation is enforced and role changes revoke sessions',async()=>{
+ assert.equal((await request(9502,'/admin/team','POST',{email:'staff-created@example.com',role:'staff',password:'temporary-password-123'})).status,403);
+ await pool.query("SELECT setval(pg_get_serial_sequence('users','id'),(SELECT max(id) FROM users))");
+ const made=await request(9501,'/admin/team','POST',{email:'staff-created@example.com',name:'Test Staff',role:'staff',password:'temporary-password-123'});assert.equal(made.status,201);
+ const id=made.body.id;assert.equal((await request(id,'/admin/me')).body.must_change_password,true);assert.equal((await request(id,'/admin/users')).body.code,'PASSWORD_CHANGE_REQUIRED');
+ assert.equal((await request(id,'/admin/password','POST',{currentPassword:'wrong',password:'new-secure-password-123'})).status,400);
+ assert.equal((await request(id,'/admin/password','POST',{currentPassword:'temporary-password-123',password:'new-secure-password-123'})).status,200);
+ assert.equal((await request(id,'/admin/overview')).status,401);
+ assert.equal((await request(9501,`/admin/team/${id}`,'PATCH',{role:'user',reason:'Staff assignment ended.'})).status,200);
+ assert.equal((await request(9501,'/admin/team/9501','PATCH',{role:'user',reason:'Cannot demote self.'})).status,403);
+ const audit=(await request(9501,'/admin/audit')).body.events;assert.ok(audit.some(event=>event.action==='team_account_created'));assert.ok(audit.some(event=>event.action==='role_changed'));assert.equal(JSON.stringify(audit).includes('temporary-password-123'),false);
+});
+test('reported conversation evidence is scoped to the reported pair and review actions are audited',async()=>{
+ const match=(await pool.query('INSERT INTO matches(user1_id,user2_id,soul_game_completed) VALUES(9505,9402,TRUE) RETURNING id')).rows[0].id;
+ await pool.query("INSERT INTO messages(match_id,sender_id,content) VALUES($1,9402,'Reported conversation evidence')",[match]);
+ const report=await request(9505,'/reports','POST',{kind:'user',matchId:match,reason:'harassment'});assert.equal(report.status,201);
+ assert.equal((await request(9505,'/admin/reports/'+report.body.id)).status,403);
+ const evidence=await request(9503,'/admin/reports/'+report.body.id);assert.equal(evidence.status,200);assert.equal(evidence.body.evidence.messages[0].content,'Reported conversation evidence');
+ assert.equal((await request(9503,'/admin/reports/'+report.body.id,'PATCH',{status:'resolved',notes:'Reviewed the report evidence.',assignToMe:true})).status,200);
+ const saved=(await pool.query('SELECT * FROM safety_reports WHERE id=$1',[report.body.id])).rows[0];assert.equal(saved.status,'resolved');assert.equal(saved.assigned_to,9503);
+ const events=(await request(9501,'/admin/audit')).body.events;assert.ok(events.some(event=>event.action==='report_evidence_viewed'));assert.ok(events.some(event=>event.action==='report_updated'));
+});
+test('presence accumulates approximate foreground usage once across simultaneous tabs',async()=>{
+ const id=9505,session1=crypto.randomUUID(),session2=crypto.randomUUID();
+ await request(id,'/profile/presence','POST',{sessionId:session1,active:true});
+ await pool.query("UPDATE users SET usage_last_heartbeat=NOW()-INTERVAL '20 seconds' WHERE id=$1",[id]);
+ await Promise.all([request(id,'/profile/presence','POST',{sessionId:session1,active:true}),request(id,'/profile/presence','POST',{sessionId:session2,active:true})]);
+ let row=(await pool.query('SELECT active_seconds,active_since FROM users WHERE id=$1',[id])).rows[0];assert.ok(Number(row.active_seconds)>=19&&Number(row.active_seconds)<=21);assert.ok(row.active_since);
+ await pool.query("UPDATE users SET usage_last_heartbeat=NOW()-INTERVAL '5 minutes' WHERE id=$1",[id]);
+ await request(id,'/profile/presence','POST',{sessionId:session1,active:true});
+ const after=(await pool.query('SELECT active_seconds FROM users WHERE id=$1',[id])).rows[0];assert.equal(after.active_seconds,row.active_seconds);
+ const overview=await request(9501,'/admin/overview');assert.equal(overview.status,200);assert.equal(overview.body.activity.length,7);
+});
+
+test('admins can reversibly hide reported posts; staff cannot; every action is audited',async()=>{
+ const post=(await pool.query("INSERT INTO posts(user_id,caption,visibility) VALUES(9505,'Post for hide and restore test','public') RETURNING id")).rows[0].id;
+ const report=(await request(9401,'/reports','POST',{kind:'post',postId:post,reason:'spam'})).body.id;
+ assert.equal((await request(9503,`/admin/reports/${report}/content-action`,'POST',{action:'hide_post',reason:'Confirmed policy violation.'})).status,403);
+ assert.equal((await request(9502,`/admin/reports/${report}/content-action`,'POST',{action:'hide_post',reason:'Confirmed policy violation.'})).status,200);
+ assert.equal((await request(9401,`/feed/${post}/comments`)).status,404);
+ assert.equal((await request(9505,'/profile/posts')).body.some(p=>p.id===post),false);
+ assert.equal((await request(9502,`/admin/reports/${report}`)).body.evidence.caption,'Post for hide and restore test');
+ assert.equal((await request(9502,`/admin/reports/${report}/content-action`,'POST',{action:'restore_post',reason:'Restored after successful appeal.'})).status,200);
+ assert.equal((await request(9401,`/feed/${post}/comments`)).status,200);
+ const audit=(await request(9501,'/admin/audit')).body.events;assert.ok(audit.some(row=>row.action==='hide_post'));assert.ok(audit.some(row=>row.action==='restore_post'));
 });

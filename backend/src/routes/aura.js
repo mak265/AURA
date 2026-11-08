@@ -23,7 +23,7 @@ router.get('/me', authenticate, async (req, res) => {
     const userId = req.user.userId;
 
     const userResult = await db.query(
-      'SELECT id, email, real_name, age, gender, religion, city, profile_photo FROM users WHERE id = $1',
+      'SELECT id, email, real_name, age, gender, religion, city, profile_photo, management_role FROM users WHERE id = $1',
       [userId]
     );
     if (userResult.rows.length === 0) {

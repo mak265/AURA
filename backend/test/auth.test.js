@@ -49,3 +49,8 @@ test('both login methods report database outages as temporary unavailability', a
     }
   } finally { unavailable = false; }
 });
+
+test('banned accounts cannot sign in through password or Google',async()=>{
+ user.banned_at=new Date().toISOString();
+ try{assert.equal((await post('/login',{email:user.email,password:'valid-password'})).status,403);assert.equal((await post('/google',{tokenId:'verified-test-token'})).status,403);}finally{delete user.banned_at;}
+});

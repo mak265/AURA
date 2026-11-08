@@ -32,7 +32,7 @@ async function submitReport(req,res){
   }
   const recent=await client.query("SELECT count(*)::int AS count FROM safety_reports WHERE reporter_id=$1 AND created_at>NOW()-INTERVAL '10 minutes'",[req.user.userId]);
   if(recent.rows[0].count>=5){await client.query('ROLLBACK');return res.status(429).json({error:'You have submitted several reports. Please wait 10 minutes before sending another.'});}
-  const result=await client.query('INSERT INTO safety_reports(reporter_id,kind,target_id,reported_user_id,reason,details,context_path) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,status',[req.user.userId,kind,target,reported,reason,details.trim(),context]);
+  const result=await client.query('INSERT INTO safety_reports(reporter_id,kind,target_id,reported_user_id,reason,details,context_path,conversation_id,soul_session_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,status',[req.user.userId,kind,target,reported,reason,details.trim(),context,kind==='user'?(body.matchId||null):null,kind==='user'?(body.sessionId||null):null]);
   await client.query('COMMIT');res.status(201).json({...result.rows[0],message:'Report received. Thank you for helping improve AURA.'});
  }catch(error){if(client)await client.query('ROLLBACK');console.error('Report submission failed:',error.code||'unknown');res.status(500).json({error:'Unable to submit report. Please try again.'});}finally{client?.release();}
 }

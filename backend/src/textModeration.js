@@ -22,6 +22,9 @@ function nextState(state,violation,now){
 }
 async function enforceText(req,res,text,{strict=true}={}){return enforceViolation(req,res,isViolation(text,strict),'text');}
 async function enforceViolation(req,res,violation,kind='text'){
+ const account=await db.query('SELECT admin_restricted_until,admin_restriction_reason FROM users WHERE id=$1',[req.user.userId]);
+ if(account.rows[0]?.admin_restricted_until&&new Date(account.rows[0].admin_restricted_until)>new Date()){res.status(403).json({code:'ADMIN_RESTRICTED',error:'Sending and posting are restricted until '+new Date(account.rows[0].admin_restricted_until).toLocaleString('en-US',{timeZone:'UTC'})+' UTC. '+(account.rows[0].admin_restriction_reason||'')});return false;}
+
  const client=await db.pool.connect();
  try{
   await client.query('BEGIN');

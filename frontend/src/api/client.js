@@ -17,6 +17,7 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if(error.response?.data?.code==='ACCOUNT_BANNED'&&!error.config?.url?.includes('/auth/')){localStorage.removeItem('aura_token');window.location.href='/login';}
     if(error.response?.data?.moderation)window.dispatchEvent(new CustomEvent('aura:moderation',{detail:error.response.data}));
     if (error.response?.status === 401) {
       localStorage.removeItem('aura_token');

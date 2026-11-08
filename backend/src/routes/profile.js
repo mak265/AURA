@@ -8,6 +8,8 @@ const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
 router.post('/presence',authenticate,presenceHeartbeat);
+router.get('/warnings',authenticate,async(req,res)=>{try{const result=await db.query('SELECT id,reason,created_at FROM account_warnings WHERE user_id=$1 AND acknowledged_at IS NULL ORDER BY created_at DESC LIMIT 10',[req.user.userId]);res.json(result.rows);}catch{res.status(500).json({error:'Unable to load account notices.'});}});
+router.post('/warnings/:id/acknowledge',authenticate,async(req,res)=>{try{await db.query('UPDATE account_warnings SET acknowledged_at=COALESCE(acknowledged_at,NOW()) WHERE id=$1 AND user_id=$2',[Number(req.params.id),req.user.userId]);res.json({ok:true});}catch{res.status(500).json({error:'Unable to acknowledge notice.'});}});
 
 // GET /api/profile - own profile with aura + private identity + stats
 router.get('/', authenticate, async (req, res) => {
@@ -66,7 +68,7 @@ router.get('/posts', authenticate, async (req, res) => {
     const result = await db.query(`SELECT p.id,p.image_url,p.caption,p.created_at,p.visibility,
       (SELECT count(*)::int FROM post_likes WHERE post_id=p.id) AS like_count,
       (SELECT count(*)::int FROM post_comments WHERE post_id=p.id) AS comment_count
-      FROM posts p WHERE p.user_id=$1 ORDER BY p.created_at DESC,p.id DESC LIMIT 50`, [req.user.userId]);
+      FROM posts p WHERE p.user_id=$1 AND p.moderation_hidden_at IS NULL ORDER BY p.created_at DESC,p.id DESC LIMIT 50`, [req.user.userId]);
     res.json(result.rows);
   } catch (error) {
     console.error('Profile posts error:',error);

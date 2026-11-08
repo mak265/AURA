@@ -5,7 +5,7 @@ const express=require('express'),db=require('../db');
 const {authenticate}=require('../middleware/auth');
 const {visiblePostSql}=require('../postPrivacy');
 const router=express.Router();router.use(authenticate);
-const visible=`g.expires_at>NOW() AND ${visiblePostSql('g','$1')}`;
+const visible=`g.expires_at>NOW() AND ${visiblePostSql('g','$1',false)}`;
 router.get('/',async(req,res)=>{try{
  const result=await db.query(`SELECT g.id,g.user_id,g.created_at,g.expires_at,g.visibility,a.aura_name,
  CASE WHEN g.user_id=$1 OR EXISTS(SELECT 1 FROM matches m WHERE m.revealed AND ((m.user1_id=$1 AND m.user2_id=g.user_id) OR (m.user2_id=$1 AND m.user1_id=g.user_id))) THEN u.profile_photo ELSE NULL END AS profile_photo

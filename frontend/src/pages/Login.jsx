@@ -18,7 +18,8 @@ export default function Login() {
     setLoading(true);
     try {
       const data = await login(email, password);
-      if (data.user.hasAura) {
+      if(['staff','admin','superadmin'].includes(data.user.management_role)){navigate('/admin');}
+      else if (data.user.hasAura) {
         navigate('/discover');
       } else {
         navigate('/onboarding');

@@ -7,7 +7,9 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "db:init": "node db/init.js",
-    "db:local": "node db/local.js"
+    "db:local": "node db/local.js",
+    "db:migrate": "node db/migrate.js",
+    "admin:bootstrap": "node db/bootstrap-admin.js"
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",

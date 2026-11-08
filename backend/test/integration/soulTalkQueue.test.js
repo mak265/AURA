@@ -39,6 +39,7 @@ before(async () => {
   await pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname,'../../db/migrations/010_conversation_actions.sql'),'utf8'));
   await pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname,'../../db/migrations/015_text_moderation.sql'),'utf8'));
   for(const file of ['011_message_reactions.sql','012_message_removal.sql'])await pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname,'../../db/migrations',file),'utf8'));
+  for(const file of ['016_safety_reports.sql','017_admin_management.sql'])await pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname,'../../db/migrations',file),'utf8'));
   const app = express();
   app.use(express.json());
   app.use('/profile',require('../../src/routes/profile'));
@@ -48,7 +49,7 @@ before(async () => {
   await new Promise(resolve => server.once('listening', resolve));
   baseUrl = 'http://127.0.0.1:' + server.address().port;
 });
-beforeEach(async () => { await pool.query('TRUNCATE moderation_state, hidden_messages, message_reactions, conversation_preferences, aura_sessions, matches, blocks, aura_session_answers, aura_session_messages, messages, likes, aura_requests'); await pool.query("UPDATE users SET settings='{}'::jsonb"); });
+beforeEach(async () => { await pool.query('TRUNCATE safety_reports, account_warnings, daily_app_usage, moderation_state, hidden_messages, message_reactions, conversation_preferences, aura_sessions, matches, blocks, aura_session_answers, aura_session_messages, messages, likes, aura_requests'); await pool.query("UPDATE users SET settings='{}'::jsonb"); });
 after(async () => {
   if (server) await new Promise(resolve => server.close(resolve));
   db.pool = originalPool;

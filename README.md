@@ -51,7 +51,41 @@ own report summaries. Reports never automatically penalize the target.
 
 Only eligible visible posts/profiles or the authenticated user's conversation
 partner can be reported. Active reports for the same target are deduplicated;
-new submissions are limited to five per ten minutes per reporter. An admin
-review dashboard or notification delivery is not implemented yet; review
-currently requires authorized database access. The legacy `/api/profile/report`
+new submissions are limited to five per ten minutes per reporter. The management dashboard at `/admin` supports report triage, evidence review,
+notes, assignment, status changes, and reversible hiding of reported posts. The legacy `/api/profile/report`
 route uses the same validation and report storage.
+
+
+## Management dashboard
+
+Open /admin after signing in to a management account. This is a full-width,
+responsive workspace, separate from the dating app's phone layout.
+
+- Staff: analytics, basic user details, warnings, report triage and evidence.
+- Admin: staff permissions plus restrictions, bans, and post hide/restore.
+- Superadmin: management accounts, role changes, and append-only audit history.
+
+Apply new migrations with `cd backend; npm run db:migrate`. This does not reset
+existing data. The local database runner also applies migrations on startup.
+For the first superadmin only, run `npm run admin:bootstrap -- email@example.com`.
+The CLI prompts for a hidden password and stops once a superadmin exists.
+Never commit credentials or add a default management password to seed data.
+Superadmin can create admin/staff accounts with temporary passwords; these must
+be rotated before management tools can be used. Existing account roles can also
+be changed by user ID. Role changes and password rotation revoke old sessions.
+
+Bans revoke sessions and disconnect live sockets. Warnings require user
+acknowledgement; temporary restrictions block sending/posting. Restrictions can
+be 1 hour, 1 day, 3 days, or 7 days. Management actions require reasons and are
+recorded atomically with their audit entries. Audit records cannot be edited or
+deleted through the app and a database trigger rejects normal UPDATE/DELETE.
+
+Activity metrics start with migration 017. Visible-tab heartbeats estimate
+foreground use, avoid counting multiple tabs twice, and skip gaps over 45
+seconds. They do not reconstruct past usage or measure attentive screen time.
+The activity chart uses UTC day buckets. Management accounts are excluded from
+community activity totals. Report evidence is limited to the reported post or
+up to 30 recent text/attachment metadata messages from the reported pair;
+conversation media is not loaded in the review drawer. Evidence views and user
+detail views are also audited. Old reports without conversation context may not
+have message evidence.

@@ -48,7 +48,7 @@ export default function GoogleSignInButton() {
       setError('');
       try {
         const data = await googleLogin(response.credential);
-        if (active) navigate(data.user.hasAura ? '/discover' : '/onboarding');
+        if (active) navigate(['staff','admin','superadmin'].includes(data.user.management_role)?'/admin':data.user.hasAura ? '/discover' : '/onboarding');
       } catch (err) {
         if (active) setError(err.response?.data?.error || 'Google sign-in failed. Please try again.');
       } finally {

@@ -1,3 +1,4 @@
+import AccountNotices from './components/AccountNotices';
 import ModerationNotice from './components/ModerationNotice';
 import { lazy, Suspense } from 'react';
 import {pageImports} from './pageImports';
@@ -17,6 +18,7 @@ const Profile=lazy(pageImports.Profile);
 const ConnectionProfile=lazy(pageImports.ConnectionProfile);
 const Feed=lazy(pageImports.Feed);
 
+const Admin=lazy(()=>import('./pages/Admin'));
 const Settings=lazy(pageImports.Settings);
 function PageLoading(){const {user}=useAuth(),{pathname}=useLocation();return <div className="page-loading min-h-screen pb-24"><div className="page-loading-heading"/><ContentSkeleton/>{user&&['/feed','/discover','/matches','/profile','/aura-chat'].includes(pathname)&&<BottomNav/>}</div>;}
 function ProtectedRoute({ children }) {
@@ -53,6 +55,7 @@ function AppRoutes() {
       <Route path="/aura-chat" element={<ProtectedRoute><SoulTalkRoute /></ProtectedRoute>} />
       <Route path="/aura-chat/:matchId" element={<ProtectedRoute><SoulTalkRoute /></ProtectedRoute>} />
       <Route path="/profile/connection/:matchId" element={<ProtectedRoute><ConnectionProfile /></ProtectedRoute>} />
+      <Route path="/admin/*" element={<ProtectedRoute><Admin/></ProtectedRoute>}/>
       <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
       <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
@@ -60,13 +63,12 @@ function AppRoutes() {
   );
 }
 
+function AppFrame(){const {pathname}=useLocation();return <div className={pathname.startsWith('/admin')?'management-frame':'phone-frame'}><AppRoutes/><ModerationNotice/><AccountNotices/></div>;}
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <div className="phone-frame">
-          <AppRoutes /><ModerationNotice/>
-        </div>
+        <AppFrame/>
       </AuthProvider>
     </BrowserRouter>
   );

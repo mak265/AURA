@@ -55,7 +55,8 @@ router.post('/signup', async (req, res) => {
     );
 
     const user = result.rows[0];
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    if(user.banned_at)return res.status(403).json({code:'ACCOUNT_BANNED',error:'This account has been banned. Contact AURA support.'});
+    const token = jwt.sign({ userId: user.id,version:user.auth_version||0 }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
     res.status(201).json({
       message: 'Account created successfully.',
@@ -89,7 +90,8 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    if(user.banned_at)return res.status(403).json({code:'ACCOUNT_BANNED',error:'This account has been banned. Contact AURA support.'});
+    const token = jwt.sign({ userId: user.id,version:user.auth_version||0 }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
     // Check if user has completed aura setup
     const auraResult = await db.query('SELECT aura_name FROM auras WHERE user_id = $1', [user.id]);
@@ -98,7 +100,7 @@ router.post('/login', async (req, res) => {
     res.json({
       message: 'Login successful.',
       token,
-      user: { id: user.id, email: user.email, hasAura },
+      user: { id: user.id, email: user.email, hasAura, management_role:user.management_role||'user' },
     });
   } catch (err) {
     console.error('Login error:', err);
@@ -151,7 +153,8 @@ router.post('/google', async (req, res) => {
       user = insertResult.rows[0];
     }
 
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    if(user.banned_at)return res.status(403).json({code:'ACCOUNT_BANNED',error:'This account has been banned. Contact AURA support.'});
+    const token = jwt.sign({ userId: user.id,version:user.auth_version||0 }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
     // Check if user has aura
     const auraResult = await db.query('SELECT aura_name FROM auras WHERE user_id = $1', [user.id]);
@@ -160,7 +163,7 @@ router.post('/google', async (req, res) => {
     res.json({
       message: hasAura ? 'Google login successful.' : 'Google signup successful.',
       token,
-      user: { id: user.id, email: user.email, hasAura },
+      user: { id: user.id, email: user.email, hasAura, management_role:user.management_role||'user' },
     });
   } catch (err) {
     console.error('Google auth error:', err);
