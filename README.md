@@ -89,3 +89,30 @@ up to 30 recent text/attachment metadata messages from the reported pair;
 conversation media is not loaded in the review drawer. Evidence views and user
 detail views are also audited. Old reports without conversation context may not
 have message evidence.
+
+## Retained conversation report evidence
+
+Migration 018 adds report-time snapshots for newly submitted conversation
+reports only. Up to 30 messages visible to the reporter are copied atomically
+with the report, with a 10 MB total media cap per report. Hidden, already-unsent,
+and conversation-deleted messages are excluded. Messages sent after submission
+are not added. Duplicate reports do not extend or replace the snapshot.
+
+Unsend still erases the regular message and media. Any earlier report snapshot
+survives only until 30 days after that report's creation. Existing unsent content
+cannot be reconstructed, and older reports are not backfilled. Retention is not
+extended by report status changes, repeated views, or reviewer assignment.
+
+Only Superadmin or the explicitly designated evidence reviewer can read the
+snapshot. Only Superadmin can assign or revoke this reviewer. Triage assignment
+(including Assign to me) does not grant retained-evidence access. Each text or
+media access requires a reason, re-checks authorization and expiry, and writes an
+audit event without copying message content into the permanent audit log.
+Responses are private/no-store, and media loads only after an explicit action.
+
+Expired snapshots are immediately refused by access endpoints. A startup and
+one-minute periodic cleanup physically deletes expired rows and media while the
+backend is running; after downtime cleanup resumes on startup. Database backups
+must follow the operator's own retention policy as well—live-table deletion does
+not rewrite older backups. Do not promise removal from screenshots or copies
+already saved by an authorized reviewer.

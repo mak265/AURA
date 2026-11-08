@@ -1,6 +1,7 @@
 const express=require('express'),bcrypt=require('bcryptjs'),db=require('../db');
 const {authenticate}=require('../middleware/auth'),{audit,requireManagement,superOnly,safeError}=require('../management');
 const router=express.Router();router.use(authenticate,requireManagement);
+router.use('/reports',require('./adminEvidence'));
 const userFields=`u.id,u.email,u.real_name,u.age,u.gender,u.city,u.management_role,u.created_at,u.last_active_at,u.active_since,u.active_seconds,u.banned_at,u.admin_restricted_until,u.ban_reason,u.admin_restriction_reason,
  EXISTS(SELECT 1 FROM user_presence p WHERE p.user_id=u.id AND p.expires_at>NOW()) AS active_now,
  (SELECT count(*)::int FROM account_warnings w WHERE w.user_id=u.id) AS warning_count`;
@@ -78,7 +79,7 @@ router.get('/reports/:id',async(req,res)=>{let client;try{
  if(member.rowCount)evidence={messages:(await client.query('SELECT id,sender_id,content,kind,unsent_at,created_at FROM messages WHERE match_id=$1 ORDER BY created_at DESC,id DESC LIMIT 30',[conversationId])).rows.reverse()};
  }
  if(report.kind==='user'&&report.soul_session_id){const member=await client.query('SELECT id FROM aura_sessions WHERE id=$1 AND (user1_id=$2 OR user2_id=$2) AND (user1_id=$3 OR user2_id=$3)',[report.soul_session_id,report.reporter_id,report.reported_user_id]);if(member.rowCount)evidence={messages:(await client.query('SELECT id,sender_id,content,created_at FROM aura_session_messages WHERE session_id=$1 ORDER BY created_at DESC LIMIT 30',[report.soul_session_id])).rows.reverse()};}
- await audit(client,req.actor,'report_evidence_viewed','report',Number(req.params.id),'Reported content review');await client.query('COMMIT');res.json({...report,evidence});
+ await audit(client,req.actor,'report_evidence_viewed','report',Number(req.params.id),'Reported content review');await client.query('COMMIT');res.json({...report,evidence,retained_access:req.actor.role==='superadmin'||report.evidence_reviewer_id===req.actor.id});
  }catch(error){if(client)await client.query('ROLLBACK');safeError(res,error);}finally{client?.release();}});
 router.patch('/reports/:id',async(req,res)=>{
  const {status,notes='',assignToMe=false}=req.body||{};if(!['pending','reviewing','resolved','dismissed'].includes(status)||typeof notes!=='string'||notes.length>2000||typeof assignToMe!=='boolean')return res.status(400).json({error:'Choose a report status and notes up to 2,000 characters.'});

@@ -523,3 +523,74 @@ test('admins can reversibly hide reported posts; staff cannot; every action is a
  assert.equal((await request(9401,`/feed/${post}/comments`)).status,200);
  const audit=(await request(9501,'/admin/audit')).body.events;assert.ok(audit.some(row=>row.action==='hide_post'));assert.ok(audit.some(row=>row.action==='restore_post'));
 });
+
+test('retained report evidence survives later unsend, is tightly authorized, audited, and purged after expiry',async()=>{
+ for(const id of [9601,9602]){await pool.query('INSERT INTO users(id,email,password_hash) VALUES($1,$2,$3)',[id,`${id}@example.com`,'test']);await pool.query('INSERT INTO auras(user_id,aura_name) VALUES($1,$2)',[id,'Evidence '+id]);}
+ const match=(await pool.query('INSERT INTO matches(user1_id,user2_id,soul_game_completed) VALUES(9601,9602,TRUE) RETURNING id')).rows[0].id;
+ const already=(await pool.query("INSERT INTO messages(match_id,sender_id,content) VALUES($1,9601,'Unsent before report') RETURNING id",[match])).rows[0].id;
+ await request(9601,`/matches/${match}/messages/${already}/remove`,'POST',{action:'unsend'});
+ const bytes=Buffer.from([137,80,78,71,13,10,26,10,1,2,3]);
+ const kept=(await pool.query("INSERT INTO messages(match_id,sender_id,content,kind,attachment,attachment_mime) VALUES($1,9601,'Retain this reported message','image',$2,'image/png') RETURNING id",[match,bytes])).rows[0].id;
+ const hidden=(await pool.query("INSERT INTO messages(match_id,sender_id,content) VALUES($1,9601,'Hidden from reporter') RETURNING id",[match])).rows[0].id;
+ await pool.query('INSERT INTO hidden_messages(message_id,user_id) VALUES($1,9602)',[hidden]);
+ const report=await request(9602,'/reports','POST',{kind:'user',matchId:match,reason:'harassment'});assert.equal(report.status,201);
+ const rows=(await pool.query('SELECT * FROM report_message_evidence WHERE report_id=$1',[report.body.id])).rows;assert.equal(rows.length,1);assert.equal(rows[0].message_id,kept);assert.deepEqual(rows[0].attachment,bytes);
+ assert.ok(Math.abs(new Date(rows[0].expires_at)-new Date(report.body.created_at)-30*86400000)<1000);
+ await pool.query("INSERT INTO messages(match_id,sender_id,content) VALUES($1,9601,'Sent after report')",[match]);
+ assert.equal((await request(9601,`/matches/${match}/messages/${kept}/remove`,'POST',{action:'unsend'})).status,200);
+ const normal=(await request(9602,`/matches/${match}/messages`)).body.find(message=>message.id===kept);assert.equal(normal.content,'');assert.ok(normal.unsent_at);
+ const ordinary=(await request(9502,'/admin/reports/'+report.body.id)).body;assert.equal(ordinary.retained_access,false);assert.equal(ordinary.evidence.messages.find(message=>message.id===kept).content,'');assert.equal(JSON.stringify(ordinary).includes('Retain this reported message'),false);
+ const url=`/admin/reports/${report.body.id}/retained-evidence`,reason='Investigating the submitted harassment report.';
+ assert.equal((await request(9602,url,'POST',{reason})).status,403);
+ assert.equal((await request(9502,url,'POST',{reason})).status,403);
+ await request(9503,'/admin/reports/'+report.body.id,'PATCH',{status:'reviewing',notes:'Triage only',assignToMe:true});
+ assert.equal((await request(9503,url,'POST',{reason})).status,403); // Self-assigned triage is insufficient.
+ assert.equal((await request(9501,url,'POST',{reason:''})).status,400);
+ let opened=await request(9501,url,'POST',{reason});assert.equal(opened.status,200);assert.equal(opened.body.messages[0].content,'Retain this reported message');assert.equal(opened.body.messages[0].unsent_now,true);assert.equal(opened.body.messages[0].attachment,undefined);
+ const reviewer=`/admin/reports/${report.body.id}/evidence-reviewer`;
+ assert.equal((await request(9502,reviewer,'POST',{reviewerId:9502,reason})).status,403);
+ assert.equal((await request(9501,reviewer,'POST',{reviewerId:9602,reason})).status,400);
+ assert.equal((await request(9501,reviewer,'POST',{reviewerId:9503,reason})).status,200);
+ opened=await request(9503,url,'POST',{reason});assert.equal(opened.status,200);
+ const mediaUrl=url+'/'+rows[0].id+'/media';
+ const media=await fetch(base+mediaUrl,{method:'POST',headers:{Authorization:'Bearer '+jwt.sign({userId:9503},process.env.JWT_SECRET),'Content-Type':'application/json'},body:JSON.stringify({reason})});assert.equal(media.status,200);assert.match(media.headers.get('cache-control'),/no-store/);assert.deepEqual(Buffer.from(await media.arrayBuffer()),bytes);
+ assert.equal((await request(9501,reviewer,'POST',{reviewerId:null,reason:'Reviewer access removed after reassignment.'})).status,200);
+ assert.equal((await request(9503,url,'POST',{reason})).status,403);assert.equal((await request(9503,mediaUrl,'POST',{reason})).status,403);
+ await pool.query("UPDATE report_message_evidence SET expires_at=NOW()-INTERVAL '1 second' WHERE report_id=$1",[report.body.id]);
+ assert.equal((await request(9501,url,'POST',{reason})).status,410);assert.equal((await request(9501,mediaUrl,'POST',{reason})).status,410);
+ await require('../../src/reportEvidence').purgeExpiredEvidence();assert.equal((await pool.query('SELECT * FROM report_message_evidence WHERE report_id=$1',[report.body.id])).rowCount,0);
+ const audit=(await pool.query("SELECT * FROM management_audit WHERE target_id=$1 AND action IN ('retained_evidence_viewed','retained_media_viewed','evidence_reviewer_assigned')",[report.body.id])).rows;assert.equal(audit.filter(row=>row.action==='retained_evidence_viewed').length,2);assert.ok(audit.some(row=>row.action==='retained_media_viewed'));assert.equal(JSON.stringify(audit).includes('Retain this reported message'),false);
+});
+test('report snapshots are capped at 30 visible messages and do not grow after report submission',async()=>{
+ const match=(await pool.query('INSERT INTO matches(user1_id,user2_id,soul_game_completed) VALUES(9401,9602,TRUE) RETURNING id')).rows[0].id;
+ await pool.query("INSERT INTO messages(match_id,sender_id,content,created_at) SELECT $1,9401,'Context '||n,NOW()-INTERVAL '1 minute'+n*INTERVAL '1 second' FROM generate_series(1,35) n",[match]);
+ const report=await request(9602,'/reports','POST',{kind:'user',matchId:match,reason:'other'});assert.equal(report.status,201);
+ let rows=(await pool.query('SELECT * FROM report_message_evidence WHERE report_id=$1 ORDER BY message_created_at',[report.body.id])).rows;assert.equal(rows.length,30);assert.equal(rows[0].content,'Context 6');
+ await pool.query("INSERT INTO messages(match_id,sender_id,content) VALUES($1,9401,'New context after report')",[match]);
+ assert.equal((await request(9602,'/reports','POST',{kind:'user',matchId:match,reason:'other'})).body.duplicate,true);
+ rows=(await pool.query('SELECT * FROM report_message_evidence WHERE report_id=$1',[report.body.id])).rows;assert.equal(rows.length,30);assert.equal(rows.some(message=>message.content==='New context after report'),false);
+});
+
+test('concurrent report and unsend cannot capture content after it was already unsent',async()=>{
+ for(const id of [9701,9702]){await pool.query('INSERT INTO users(id,email,password_hash) VALUES($1,$2,$3)',[id,`${id}@example.com`,'test']);await pool.query('INSERT INTO auras(user_id,aura_name) VALUES($1,$2)',[id,'Race '+id]);}
+ const match=(await pool.query('INSERT INTO matches(user1_id,user2_id,soul_game_completed) VALUES(9701,9702,TRUE) RETURNING id')).rows[0].id;
+ const message=(await pool.query("INSERT INTO messages(match_id,sender_id,content) VALUES($1,9701,'Race condition evidence') RETURNING id",[match])).rows[0].id;
+ const [report,unsend]=await Promise.all([request(9702,'/reports','POST',{kind:'user',matchId:match,reason:'other'}),request(9701,`/matches/${match}/messages/${message}/remove`,'POST',{action:'unsend'})]);
+ assert.equal(report.status,201);assert.equal(unsend.status,200);
+ const snapshot=(await pool.query('SELECT * FROM report_message_evidence WHERE report_id=$1',[report.body.id])).rows;
+ const original=(await pool.query('SELECT unsent_at,content FROM messages WHERE id=$1',[message])).rows[0];assert.equal(original.content,'');assert.ok(original.unsent_at);
+ if(snapshot.length){assert.equal(snapshot[0].content,'Race condition evidence');assert.ok(new Date(snapshot[0].captured_at)<=new Date(original.unsent_at));}else assert.equal(snapshot.length,0);
+});
+
+test('Soul Talk reports retain text context and report media stays within the 10 MB cap',async()=>{
+ for(const id of [9801,9802,9803]){await pool.query('INSERT INTO users(id,email,password_hash) VALUES($1,$2,$3)',[id,`${id}@example.com`,'test']);await pool.query('INSERT INTO auras(user_id,aura_name) VALUES($1,$2)',[id,'Retention '+id]);}
+ const session=(await pool.query("INSERT INTO aura_sessions(user1_id,user2_id,status) VALUES(9801,9802,'active') RETURNING id")).rows[0].id;
+ await pool.query("INSERT INTO aura_session_messages(session_id,sender_id,content) VALUES($1,9801,'Reported Soul Talk context')",[session]);
+ const soul=await request(9802,'/reports','POST',{kind:'user',sessionId:session,reason:'other'});assert.equal(soul.status,201);
+ let snapshot=(await pool.query('SELECT source,content FROM report_message_evidence WHERE report_id=$1',[soul.body.id])).rows[0];assert.equal(snapshot.source,'soul');assert.equal(snapshot.content,'Reported Soul Talk context');
+ const match=(await pool.query('INSERT INTO matches(user1_id,user2_id,soul_game_completed) VALUES(9803,9802,TRUE) RETURNING id')).rows[0].id;
+ const media=Buffer.alloc(5*1024*1024,1);
+ for(let i=0;i<3;i++)await pool.query("INSERT INTO messages(match_id,sender_id,content,kind,attachment,attachment_mime) VALUES($1,9803,'Media cap test','image',$2,'image/png')",[match,media]);
+ const report=await request(9802,'/reports','POST',{kind:'user',matchId:match,reason:'other'});assert.equal(report.status,201);
+ const budget=(await pool.query('SELECT sum(octet_length(attachment))::bigint AS bytes,count(*) FILTER(WHERE media_omitted)::int AS omitted FROM report_message_evidence WHERE report_id=$1',[report.body.id])).rows[0];assert.equal(Number(budget.bytes),10*1024*1024);assert.equal(budget.omitted,1);
+});

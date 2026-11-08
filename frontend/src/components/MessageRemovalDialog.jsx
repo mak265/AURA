@@ -16,7 +16,7 @@ export default function MessageRemovalDialog({ action, onCancel, onConfirm }) {
     <div className="message-confirm-icon"><Icon name={unsend?'talk':'trash'} size={25}/></div>
     <h2 id="message-removal-title">{unsend?'Unsend this message?':'Delete for you?'}</h2>
     <p id="message-removal-description">{unsend?'This message will be removed for everyone in this chat. A “This message was unsent” note will remain.':'This message will disappear from your view. The other person will still have their copy.'}</p>
-    <div className="message-confirm-note">{unsend?'They may have already seen or saved it.':'You cannot undo this action.'}</div>
+    <div className="message-confirm-note">{unsend?'They may have already seen or saved it. Messages already included in a report may be retained for review for up to 30 days.':'You cannot undo this action.'}</div>
     {error&&<p role="alert" className="message-confirm-error">{error}</p>}
     <div className="message-confirm-actions"><button autoFocus disabled={busy} onClick={onCancel}>Keep message</button><button disabled={busy} className="confirm-remove" onClick={confirm}>{busy?'Removing…':unsend?'Unsend':'Delete for me'}</button></div>
   </dialog>,document.body);
