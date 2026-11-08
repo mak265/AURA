@@ -1,0 +1,68 @@
+{
+  "version": "2026-11-08",
+  "documents": [
+    {
+      "title": "Terms of Use",
+      "sections": [
+        [
+          "Adults only",
+          "AURA is for adults aged 18 and above. Provide accurate information, protect your credentials and do not impersonate others. Age confirmation is a declaration, not identity verification."
+        ],
+        [
+          "Your content",
+          "You keep ownership of your uploads and allow AURA to store, process and display them to operate the features and audiences you choose. Share only content you have permission to use. AURA does not guarantee matches, identity or another person’s conduct."
+        ],
+        [
+          "Safety and account action",
+          "Violations may lead to warnings, restrictions or bans. Automated checks can make mistakes. Request a review through Settings → Report a bug. You can stop using AURA at any time and request account deletion through the same channel. Material policy updates receive a new version."
+        ]
+      ]
+    },
+    {
+      "title": "Privacy Notice",
+      "sections": [
+        [
+          "Information and purpose",
+          "AURA processes email, password hashes or Google sign-in information, profile details, photos, posts, Glimpses, chats, voice recordings, reactions, connections, reports, online status, app usage duration and policy acceptance records. These support authentication, profiles, discovery, communication, safety and service administration. Personal details such as religion are used for the profile and discovery features when provided; consider carefully what you share."
+        ],
+        [
+          "Who can see information",
+          "Your chosen audience controls post visibility. Public posts are available to eligible app users. Connections can see shared chats and revealed profiles. Private dating mode limits discovery visibility; it does not erase content already shared. Authorized management staff can review basic account details, usage and reports. Chats are stored on the server and are not end-to-end encrypted."
+        ],
+        [
+          "Reported conversations and unsent messages",
+          "A conversation report may retain up to 30 recent eligible messages, including media within a 10 MB limit, for 30 days from the report. This copy can survive a later unsend. Only the Superadmin or a specifically assigned evidence reviewer can access it, and access is logged. Messages already unsent before a report are not recovered by this feature."
+        ],
+        [
+          "Moderation and permissions",
+          "Automated text rules and backend image classification can refuse content and trigger warnings or restrictions. Image classification runs on the AURA backend. Google sign-in uses Google’s authentication service. Camera and microphone access require browser permission when you use those features."
+        ],
+        [
+          "Storage and choices",
+          "Account and shared content remain stored to provide the service until removed or a deletion request is handled, subject to report retention. Glimpses become unavailable after 24 hours; this does not guarantee immediate physical removal from storage or backups. Browser storage holds authentication tokens and device preferences. You can edit your profile, choose audiences and control active status. Request access, correction, deletion or review through Settings → Report a bug. Learn about privacy rights and complaints at privacy.gov.ph."
+        ],
+        [
+          "Development notice and contact",
+          "This is a development policy draft. Privacy requests currently reach the app operator through Settings → Report a bug. Before public launch, the operator’s legal identity, public privacy contact and final storage/backup retention details must be completed."
+        ]
+      ]
+    },
+    {
+      "title": "Community Guidelines",
+      "sections": [
+        [
+          "Respect boundaries",
+          "No harassment, threats, hate speech, stalking, doxxing, impersonation or scams. Respect a refusal and never evade a block. Do not pressure people to share intimate content."
+        ],
+        [
+          "Safe content",
+          "Do not share sexual exploitation, explicit sexual imagery, sexual content involving minors, non-consensual intimate content or illegal material. Do not share other people’s private information or photos without permission."
+        ],
+        [
+          "Warnings and reports",
+          "Three counted content violations within a one-hour warning window trigger a temporary one-hour restriction. The window resets after it expires. Severe conduct may also lead to management action. Reports do not automatically ban users. Report honestly and provide context."
+        ]
+      ]
+    }
+  ]
+}

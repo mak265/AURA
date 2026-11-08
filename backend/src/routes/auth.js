@@ -6,6 +6,14 @@ const { OAuth2Client } = require('google-auth-library');
 const db = require('../db');
 
 const router = express.Router();
+const policies = require('../policies.json');
+router.get('/policies', (_req, res) => res.json(policies));
+function requirePolicy(req, res) {
+  const c = req.body.policyConsent;
+  if (c?.version === policies.version && c.terms === true && c.privacy === true && c.adult === true) return true;
+  res.status(428).json({code:'POLICY_ACCEPTANCE_REQUIRED',error:'Review the policies and confirm you are 18 or older before creating an account.'});
+  return false;
+}
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 function databaseUnavailable(error) {
@@ -41,6 +49,7 @@ router.post('/signup', async (req, res) => {
       return res.status(400).json({ error: 'Invalid email format.' });
     }
 
+    if (!requirePolicy(req, res)) return;
     const existing = await db.query('SELECT id FROM users WHERE email = $1', [email]);
     if (existing.rows.length > 0) {
       return res.status(400).json({ error: 'Email already registered.' });
@@ -50,8 +59,8 @@ router.post('/signup', async (req, res) => {
     const passwordHash = await bcrypt.hash(password, salt);
 
     const result = await db.query(
-      'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email',
-      [email, passwordHash]
+      'INSERT INTO users (email, password_hash, policy_version, policy_accepted_at, adult_confirmed_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id, email',
+      [email, passwordHash, policies.version]
     );
 
     const user = result.rows[0];
@@ -141,14 +150,15 @@ router.post('/google', async (req, res) => {
     let user = result.rows[0];
 
     if (!user) {
+      if (!requirePolicy(req, res)) return;
       // Create new user with Google
       const randomPassword = crypto.randomBytes(20).toString('hex');
       const salt = await bcrypt.genSalt(10);
       const passwordHash = await bcrypt.hash(randomPassword, salt);
 
       const insertResult = await db.query(
-        'INSERT INTO users (email, password_hash, real_name) VALUES ($1, $2, $3) RETURNING id, email, real_name',
-        [email, passwordHash, realName || null]
+        'INSERT INTO users (email, password_hash, real_name, policy_version, policy_accepted_at, adult_confirmed_at) VALUES ($1, $2, $3, $4, NOW(), NOW()) RETURNING id, email, real_name',
+        [email, passwordHash, realName || null, policies.version]
       );
       user = insertResult.rows[0];
     }

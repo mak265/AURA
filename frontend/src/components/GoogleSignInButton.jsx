@@ -33,7 +33,7 @@ function loadGoogleScript() {
   return state.scriptPromise;
 }
 
-export default function GoogleSignInButton() {
+export default function GoogleSignInButton({ policyConsent }) {
   const buttonRef = useRef(null);
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -47,9 +47,10 @@ export default function GoogleSignInButton() {
       submitting = true;
       setError('');
       try {
-        const data = await googleLogin(response.credential);
+        const data = await googleLogin(response.credential, policyConsent);
         if (active) navigate(['staff','admin','superadmin'].includes(data.user.management_role)?'/admin':data.user.hasAura ? '/discover' : '/onboarding');
       } catch (err) {
+        if (active && err.response?.data?.code === 'POLICY_ACCEPTANCE_REQUIRED') { navigate('/signup'); return; }
         if (active) setError(err.response?.data?.error || 'Google sign-in failed. Please try again.');
       } finally {
         submitting = false;
@@ -80,7 +81,7 @@ export default function GoogleSignInButton() {
       active = false;
       if (state.listener === callback) state.listener = null;
     };
-  }, [googleLogin, navigate]);
+  }, [googleLogin, navigate, policyConsent]);
 
   return <div>
     <div ref={buttonRef} className="w-full" />

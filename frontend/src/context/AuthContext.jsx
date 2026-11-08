@@ -44,15 +44,15 @@ export function AuthProvider({ children }) {
     return res.data;
   };
 
-  const signup = async (email, password, confirmPassword) => {
-    const res = await api.post('/auth/signup', { email, password, confirmPassword });
+  const signup = async (email, password, confirmPassword, policyConsent) => {
+    const res = await api.post('/auth/signup', { email, password, confirmPassword, policyConsent });
     localStorage.setItem('aura_token', res.data.token);
     setUser({ user: res.data.user });
     return res.data;
   };
 
-  const googleLogin = useCallback(async (tokenId) => {
-    const res = await api.post('/auth/google', { tokenId });
+  const googleLogin = useCallback(async (tokenId, policyConsent) => {
+    const res = await api.post('/auth/google', { tokenId, policyConsent });
     localStorage.setItem('aura_token', res.data.token);
     setUser({ user: res.data.user });
     return res.data;

@@ -1,3 +1,4 @@
+import SignupPolicy from './components/SignupPolicy';
 import AccountNotices from './components/AccountNotices';
 import ModerationNotice from './components/ModerationNotice';
 import { lazy, Suspense } from 'react';
@@ -47,6 +48,7 @@ function AppRoutes() {
     <Suspense fallback={<PageLoading/>}><div key={pathname} className="route-surface"><Routes>
       <Route path="/" element={<Welcome />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/policies" element={<div className="auth-screen min-h-screen px-7 py-10"><a href="/signup">← Sign up</a><SignupPolicy readOnly/></div>} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
       <Route path="/discover" element={<ProtectedRoute><Discover /></ProtectedRoute>} />

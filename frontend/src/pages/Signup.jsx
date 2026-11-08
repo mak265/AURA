@@ -1,9 +1,11 @@
+import SignupPolicy from '../components/SignupPolicy';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import GoogleSignInButton from '../components/GoogleSignInButton';
 
 export default function Signup() {
+  const [policyConsent, setPolicyConsent] = useState(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -21,7 +23,7 @@ export default function Signup() {
     }
     setLoading(true);
     try {
-      await signup(email, password, confirmPassword);
+      await signup(email, password, confirmPassword, policyConsent);
       navigate('/onboarding');
     } catch (err) {
       setError(err.response?.data?.error || 'Signup failed.');
@@ -30,12 +32,14 @@ export default function Signup() {
     }
   };
 
+  if (!policyConsent) return <div className="auth-screen min-h-screen px-7 py-10"><button onClick={()=>navigate('/')} className="mb-8">← Back</button><SignupPolicy onContinue={setPolicyConsent}/><p className="text-center mt-6">Already a member? <button onClick={()=>navigate('/login')}>Log in</button></p></div>;
   return (
     <div className="auth-screen min-h-screen bg-aura-deep flex flex-col px-7 py-10">
       <button onClick={() => navigate('/')} className="text-aura-violet-light mb-8 self-start">←  Back</button>
       <h1 className="auth-title">Create account</h1>
       <p className="text-gray-400 text-sm mt-1">Join AURA and meet the vibe before the face.</p>
 
+      <button className="policy-review-link" onClick={()=>setPolicyConsent(null)}>Review policies & age confirmation</button>
       <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
         <div>
           <label htmlFor="email" className="text-xs font-semibold text-gray-400 mb-2 block">EMAIL</label>
@@ -82,7 +86,7 @@ export default function Signup() {
         <div className="flex-1 h-px bg-aura-border" />
       </div>
 
-      <GoogleSignInButton />
+      <GoogleSignInButton policyConsent={policyConsent} />
 
       <p className="text-center text-sm text-gray-400 mt-6">
         Already have an account?{' '}

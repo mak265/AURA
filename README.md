@@ -116,3 +116,6 @@ backend is running; after downtime cleanup resumes on startup. Database backups
 must follow the operator's own retention policy as well—live-table deletion does
 not rewrite older backups. Do not promise removal from screenshots or copies
 already saved by an authorized reviewer.
+
+### Signup policies
+New email and Google accounts must explicitly accept the current Terms/Community Guidelines, acknowledge the Privacy Notice and confirm age 18+. GET `/api/auth/policies` supplies the canonical version and documents. Acceptance version and server timestamps are saved atomically with account creation (migration 019); existing accounts can still sign in. `/policies` is publicly readable. This is a development draft: complete the operator identity, public privacy contact and final storage/backup retention before public launch. Age confirmation is self-declared, not verification.
