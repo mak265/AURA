@@ -130,3 +130,13 @@ Connection chats and active anonymous Aura Farming chats use authenticated Socke
 
 ### Testing on a phone over the local network
 Run the backend, then `npm run dev -- --host 0.0.0.0 --port 5173 --strictPort` in frontend. Open the computer’s LAN address on a phone connected to the same router/Wi-Fi. The frontend defaults to `/api`; Vite proxies API and Socket.IO traffic to port 5000, so phones never call their own localhost. An optional `VITE_API_URL` overrides the API base. Production hosting using the default must reverse-proxy `/api` and `/socket.io` to the backend (including WebSocket upgrades). LAN HTTP is for local testing; microphone/camera features require HTTPS on a phone, and Google sign-in requires an approved origin.
+
+### Android test APK
+
+The Capacitor Android project is in `frontend/android` (Android 7/API 24 minimum). Install frontend dependencies and JDK 21, accept the Android SDK license and install SDK platform 36 plus build-tools 36.0.0. Set `JAVA_HOME` and `ANDROID_HOME`, or place portable tools under `.android-tools/java/<jdk-folder>` and `.android-tools/sdk` at repository root.
+
+From frontend, build a same-Wi-Fi test APK with `npm run android:apk -- --local-test --api=http://YOUR-PC-IP:5000/api`. For an HTTPS backend, omit `--local-test` and pass `--api=https://YOUR-SERVER/api`. The script builds web assets with that API URL, syncs Capacitor, compiles a debug-signed APK, and copies it to `artifacts/AURA-test.apk`. It writes generated SDK paths and debug network policy locally; these, SDK downloads, Gradle caches and signing keys are ignored by Git. Gradle distribution downloads are checksum-pinned.
+
+With Vite running on the LAN, the APK is downloadable at `http://YOUR-PC-IP:5173/downloads/AURA-test.apk`. Open that link on the Android phone and allow installation from that browser if prompted. The test package ID is `com.aura.dating.test`, separate from a future production app. Keep the PC backend running on the same router. The UI is bundled inside the APK, while account data and messaging still use the configured backend. Local HTTP access and mixed content are enabled only for debug; the generated network policy limits HTTP to the selected private hostname. Release builds retain HTTPS defaults.
+
+Camera and microphone permissions are requested by Android when used. Live calls still need real-device testing and appropriate STUN/TURN infrastructure. This test APK uses email/password; native Google sign-in needs separate Android OAuth configuration and is not enabled. The debug APK is for direct device testing, not a Play Store release. Future changes to bundled UI require rebuilding/reinstalling this APK unless an update system is separately implemented.

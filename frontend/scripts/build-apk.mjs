@@ -1,0 +1,34 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {spawnSync} from 'node:child_process';
+
+const frontend=fileURLToPath(new URL('../',import.meta.url)),root=path.resolve(frontend,'..');
+const arg=process.argv.find(v=>v.startsWith('--api='))?.slice(6)||process.env.AURA_API_URL;
+if(!arg)throw new Error('Provide --api=https://your-server/api or --local-test --api=http://YOUR-PC-IP:5000/api');
+const api=new URL(arg);
+if(!['http:','https:'].includes(api.protocol)||api.username||api.password||api.search||api.hash||api.pathname.replace(/\/$/,'')!=='/api')throw new Error('Use a server URL ending in /api, without credentials, query or fragment.');
+const local=/^(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)$/.test(api.hostname);
+if(api.protocol==='http:'&&(!local||!process.argv.includes('--local-test')))throw new Error('HTTP is permitted only with --local-test and a private LAN address. Use HTTPS for deployed servers.');
+const tools=path.join(root,'.android-tools');
+const javaDir=path.join(tools,'java');
+const portableJava=fs.existsSync(javaDir)?fs.readdirSync(javaDir).find(v=>fs.existsSync(path.join(javaDir,v,'bin/java.exe'))):null;
+const java=process.env.JAVA_HOME||(portableJava?path.join(javaDir,portableJava):null);
+const sdk=process.env.ANDROID_HOME||process.env.ANDROID_SDK_ROOT||path.join(tools,'sdk');
+if(!java||!fs.existsSync(path.join(java,'bin/java.exe'))||!fs.existsSync(path.join(sdk,'platforms/android-36')))throw new Error('Install JDK 21 and Android SDK platform 36, then set JAVA_HOME and ANDROID_HOME. Portable tools in .android-tools are also supported.');
+const env={...process.env,JAVA_HOME:java,ANDROID_HOME:sdk,ANDROID_SDK_ROOT:sdk,ANDROID_USER_HOME:path.join(tools,'android-user'),GRADLE_USER_HOME:path.join(tools,'gradle'),VITE_API_URL:api.href.replace(/\/$/,'')};
+const run=(command,args,cwd=frontend)=>{const result=spawnSync(command,args,{cwd,env,stdio:'inherit'});if(result.error)throw result.error;if(result.status!==0)throw new Error(`${command} failed (${result.status})`);};
+const debugKey=path.join(tools,'aura-debug.keystore');
+if(!fs.existsSync(debugKey))run(path.join(java,'bin/keytool.exe'),['-genkeypair','-keystore',debugKey,'-storepass','android','-alias','androiddebugkey','-keypass','android','-dname','CN=Android Debug,O=Android,C=US','-keyalg','RSA','-keysize','2048','-validity','10000']);
+const res=path.join(frontend,'android/app/src/debug/res/xml');fs.mkdirSync(res,{recursive:true});
+fs.writeFileSync(path.join(res,'aura_network_security.xml'),`<?xml version="1.0" encoding="utf-8"?>\n<network-security-config><base-config cleartextTrafficPermitted="false"/>${api.protocol==='http:'?`<domain-config cleartextTrafficPermitted="true"><domain includeSubdomains="false">${api.hostname}</domain></domain-config>`:''}</network-security-config>\n`);
+fs.writeFileSync(path.join(frontend,'android/local.properties'),`sdk.dir=${sdk.replaceAll('\\','/')}\n`);
+run(process.execPath,['node_modules/vite/bin/vite.js','build']);
+run(process.execPath,['node_modules/@capacitor/cli/bin/capacitor','sync','android']);
+// Literal command; the API URL is passed only through the environment, never a shell string.
+run(process.env.ComSpec||'cmd.exe',['/d','/c','gradlew.bat assembleDebug --no-daemon --console=plain'],path.join(frontend,'android'));
+const source=path.join(frontend,'android/app/build/outputs/apk/debug/app-debug.apk');
+const artifacts=path.join(root,'artifacts');fs.mkdirSync(artifacts,{recursive:true});
+fs.copyFileSync(source,path.join(artifacts,'AURA-test.apk'));
+fs.writeFileSync(path.join(artifacts,'AURA-test-build.json'),JSON.stringify({builtAt:new Date().toISOString(),api:api.href,variant:'debug',packageId:'com.aura.dating.test'},null,2));
+console.log(`\nAPK ready: ${path.join(artifacts,'AURA-test.apk')}\nServer: ${api.href}`);

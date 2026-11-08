@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { Capacitor } from '@capacitor/core';
 
 // Keep one GIS instance across StrictMode effects and login/signup navigation.
 const state = window.__auraGoogleSignIn ||= { scriptPromise: null, initialized: false, listener: null };
@@ -40,6 +41,7 @@ export default function GoogleSignInButton({ policyConsent }) {
   const { googleLogin } = useAuth();
 
   useEffect(() => {
+    if (Capacitor.isNativePlatform()) return;
     let active = true;
     let submitting = false;
     const callback = async response => {
@@ -83,6 +85,7 @@ export default function GoogleSignInButton({ policyConsent }) {
     };
   }, [googleLogin, navigate, policyConsent]);
 
+  if (Capacitor.isNativePlatform()) return <p className="text-xs text-center text-gray-500">Use email and password in this test app. Native Google sign-in is not configured yet.</p>;
   return <div>
     <div ref={buttonRef} className="w-full" />
     {error && <p role="alert" className="text-red-400 text-xs text-center mt-2">{error}</p>}

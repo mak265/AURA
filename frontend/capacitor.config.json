@@ -1,0 +1,7 @@
+{
+  "appId": "com.aura.dating",
+  "appName": "AURA",
+  "webDir": "dist",
+  "server": { "androidScheme": "https" },
+  "android": { "backgroundColor": "#f5f2fa" }
+}

@@ -12,3 +12,9 @@ backend/.local-postgres/
 *.log
 **/.env.*
 !**/.env.example
+
+# Portable Android toolchain, build caches, and APK artifacts
+.android-tools/
+artifacts/
+*.apk
+*.aab
