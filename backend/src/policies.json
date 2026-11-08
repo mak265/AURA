@@ -1,5 +1,5 @@
 {
-  "version": "2026-11-08",
+  "version": "2026-11-08.2",
   "documents": [
     {
       "title": "Terms of Use",
@@ -15,6 +15,10 @@
         [
           "Safety and account action",
           "Violations may lead to warnings, restrictions or bans. Automated checks can make mistakes. Request a review through Settings → Report a bug. You can stop using AURA at any time and request account deletion through the same channel. Material policy updates receive a new version."
+        ],
+        [
+          "Aura Farming access",
+          "Free accounts receive five random chat pairings and three random audio-call pairings per fixed 24-hour window, starting at the first pairing. Waiting or cancelled searches do not use an allowance. Age and gender filters are free. Religion filters and unlimited random pairings require active Premium access. Premium billing is not yet available in this development version."
         ]
       ]
     },
@@ -44,6 +48,10 @@
         [
           "Development notice and contact",
           "This is a development policy draft. Privacy requests currently reach the app operator through Settings → Report a bug. Before public launch, the operator’s legal identity, public privacy contact and final storage/backup retention details must be completed."
+        ],
+        [
+          "Audio calls",
+          "Aura Farming audio travels between participants through WebRTC, sometimes through a relay. AURA does not record call audio. Connection setup temporarily processes network-address and session information; signaling is removed after a call ends or expires by a cleanup that runs each minute. Peer connections can expose network-address information to the other participant. Call access counters and Premium expiration are stored to enforce allowances."
         ]
       ]
     },

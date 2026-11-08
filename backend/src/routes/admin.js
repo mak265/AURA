@@ -2,7 +2,7 @@ const express=require('express'),bcrypt=require('bcryptjs'),db=require('../db');
 const {authenticate}=require('../middleware/auth'),{audit,requireManagement,superOnly,safeError}=require('../management');
 const router=express.Router();router.use(authenticate,requireManagement);
 router.use('/reports',require('./adminEvidence'));
-const userFields=`u.id,u.email,u.real_name,u.age,u.gender,u.religion,u.city,u.management_role,u.created_at,u.last_active_at,u.active_since,u.active_seconds,u.banned_at,u.admin_restricted_until,u.ban_reason,u.admin_restriction_reason,
+const userFields=`u.id,u.email,u.real_name,u.age,u.gender,u.religion,u.city,u.premium_until,u.management_role,u.created_at,u.last_active_at,u.active_since,u.active_seconds,u.banned_at,u.admin_restricted_until,u.ban_reason,u.admin_restriction_reason,
  EXISTS(SELECT 1 FROM user_presence p WHERE p.user_id=u.id AND p.expires_at>NOW()) AS active_now,
  (SELECT count(*)::int FROM account_warnings w WHERE w.user_id=u.id) AS warning_count`;
 const pageOf=req=>Math.max(0,(Number(req.query.page)||1)-1)*20;
@@ -51,13 +51,22 @@ router.get('/users/:id',async(req,res)=>{let client;try{
  }catch(error){if(client)await client.query('ROLLBACK');safeError(res,error);}finally{client?.release();}});
 router.post('/users/:id/action',async(req,res)=>{
  const {action,reason,hours}=req.body||{},target=Number(req.params.id);
- if(!['warn','restrict','unrestrict','ban','unban'].includes(action)||typeof reason!=='string'||reason.trim().length<5||reason.length>1000||!Number.isInteger(target))return res.status(400).json({error:'Choose an action and provide a reason of 5–1,000 characters.'});
+ if(!['warn','restrict','unrestrict','ban','unban','premium','unpremium'].includes(action)||typeof reason!=='string'||reason.trim().length<5||reason.length>1000||!Number.isInteger(target))return res.status(400).json({error:'Choose an action and provide a reason of 5–1,000 characters.'});
+ if(['premium','unpremium'].includes(action)&&req.actor.role!=='superadmin')return res.status(403).json({error:'Only Superadmin can manage Premium access.'});
+ if(action==='premium'&&![24,168,720,8760].includes(hours))return res.status(400).json({error:'Choose a valid Premium duration.'});
  if(req.actor.role==='staff'&&action!=='warn')return res.status(403).json({error:'Only admins can restrict or ban users.'});
  if(action==='restrict'&&![1,24,72,168].includes(hours))return res.status(400).json({error:'Choose 1 hour, 1 day, 3 days or 7 days.'});
  let client;try{client=await db.pool.connect();await client.query('BEGIN');
- const result=await client.query('SELECT id,management_role,banned_at,admin_restricted_until FROM users WHERE id=$1 FOR UPDATE',[target]);
+ if(['premium','unpremium'].includes(action))await client.query('SELECT pg_advisory_xact_lock(68421001)');
+ const result=await client.query('SELECT id,management_role,banned_at,admin_restricted_until,premium_until FROM users WHERE id=$1 FOR UPDATE',[target]);
  if(!result.rowCount||result.rows[0].management_role!=='user'||target===req.actor.id){await client.query('ROLLBACK');return res.status(403).json({error:'This account cannot be managed here.'});}
  const before=result.rows[0];
+ if(action==='premium')await client.query("UPDATE users SET premium_until=GREATEST(NOW(),COALESCE(premium_until,NOW()))+$2::int*INTERVAL '1 hour' WHERE id=$1",[target,hours]);
+ if(action==='unpremium'){
+   await client.query('UPDATE users SET premium_until=NULL WHERE id=$1',[target]);
+   await client.query("UPDATE aura_sessions SET status='ended' WHERE user1_id=$1 AND status='waiting' AND COALESCE(search_filters->>'religion','')<>''",[target]);
+ }
+
  if(action==='warn')await client.query('INSERT INTO account_warnings(user_id,issued_by,reason) VALUES($1,$2,$3)',[target,req.actor.id,reason.trim()]);
  if(action==='restrict')await client.query("UPDATE users SET admin_restricted_until=NOW()+$2::int*INTERVAL '1 hour',admin_restriction_reason=$3 WHERE id=$1",[target,hours,reason.trim()]);
  if(action==='unrestrict')await client.query('UPDATE users SET admin_restricted_until=NULL,admin_restriction_reason=NULL WHERE id=$1',[target]);
@@ -66,7 +75,7 @@ router.post('/users/:id/action',async(req,res)=>{
  await client.query('DELETE FROM user_presence WHERE user_id=$1',[target]);await client.query("UPDATE aura_sessions SET status='ended' WHERE (user1_id=$1 OR user2_id=$1) AND status IN ('waiting','active')",[target]);
  }
  if(action==='unban')await client.query('UPDATE users SET banned_at=NULL,ban_reason=NULL,auth_version=auth_version+1 WHERE id=$1',[target]);
- await audit(client,req.actor,'user_'+action,'user',target,reason.trim(),{before:{banned:!!before.banned_at,restricted_until:before.admin_restricted_until},hours:action==='restrict'?hours:null});await client.query('COMMIT');
+ await audit(client,req.actor,'user_'+action,'user',target,reason.trim(),{before:{banned:!!before.banned_at,restricted_until:before.admin_restricted_until,premium_until:before.premium_until},hours:['restrict','premium'].includes(action)?hours:null});await client.query('COMMIT');
  if(action==='ban'){const io=req.app.get('io');if(io)for(const socket of await io.fetchSockets())if(socket.userId===target)socket.disconnect(true);}
  res.json({ok:true});
  }catch(error){if(client)await client.query('ROLLBACK');safeError(res,error);}finally{client?.release();}

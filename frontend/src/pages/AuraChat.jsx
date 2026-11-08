@@ -1,3 +1,5 @@
+import FarmingLobby from '../components/FarmingLobby';
+import RandomAudioCall from '../components/RandomAudioCall';
 import ReportButton from '../components/ReportButton';
 import useChatScroll from '../hooks/useChatScroll';
 import useMessageReceipts, { messageStatus } from '../hooks/useMessageReceipts';
@@ -26,6 +28,10 @@ export default function AuraChat() {
   const searchGeneration = useRef(0);
   const starting = useRef(false);
 
+  const [mode,setMode]=useState('chat');
+  const [filters,setFilters]=useState({ageMin:'',ageMax:'',gender:'',religion:''});
+  const callStream=useRef(null);
+  const stopMicrophone=()=>{callStream.current?.getTracks().forEach(t=>t.stop());callStream.current=null;};
   const [session, setSession] = useState(null);
   const [messages, setMessages] = useState([]);
   const { listRef, stickToBottom } = useChatScroll(messages);
@@ -36,17 +42,18 @@ export default function AuraChat() {
 
   useMessageReceipts(messages, session?.sessionId ? `/aura-chat/${session.sessionId}/receipts` : null, user?.user?.id);
 
-  useEffect(() => { currentSession.current = session; }, [session]);
+  useEffect(() => { currentSession.current = session; if(session?.status==='ended'||session?.status==='matched')stopMicrophone(); }, [session]);
 
-  // Leaving the Soul Talk page cancels a pending search; tab switching does not.
+  // Leaving the Aura Farming page cancels a pending search; tab switching does not.
   // The server lease also covers lost connections and abrupt browser closure.
   useEffect(() => {
     const cancelPendingSearch = () => {
       searchGeneration.current += 1;
       setLoading(false);
       const current = currentSession.current;
-      if (current?.status === 'waiting') {
+      if (current?.status === 'waiting' || (current?.mode==='call' && current?.status==='active')) {
         leaveSearch(current.sessionId);
+        stopMicrophone();
         currentSession.current = null;
         setSession(null);
         setStatusMessage('Search stopped. Start again when you are ready.');
@@ -56,7 +63,8 @@ export default function AuraChat() {
     return () => {
       searchGeneration.current += 1;
       const current = currentSession.current;
-      if (current?.status === 'waiting') leaveSearch(current.sessionId);
+      if (current?.status === 'waiting' || (current?.mode==='call' && current?.status==='active')) leaveSearch(current.sessionId);
+      stopMicrophone();
       currentSession.current = null;
       window.removeEventListener('pagehide', cancelPendingSearch);
     };
@@ -129,7 +137,12 @@ export default function AuraChat() {
     setStatusMessage('');
     setDecisionPending(false);
     try {
-      const body = {};
+      const body = {mode:matchId?'chat':mode,filters:{...filters,ageMin:filters.ageMin===''?null:Number(filters.ageMin),ageMax:filters.ageMax===''?null:Number(filters.ageMax)}};
+      if(!matchId&&mode==='call') {
+        if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia||!window.RTCPeerConnection) throw new Error('Calls need a supported browser on HTTPS or localhost.');
+        callStream.current=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+        if(generation!==searchGeneration.current){stopMicrophone();return;}
+      }
       if (matchId) {
         const matchesRes = await api.get('/matches');
         const matchData = matchesRes.data.find(m => m.id === parseInt(matchId, 10));
@@ -146,10 +159,11 @@ export default function AuraChat() {
       setSession(res.data);
       setMessages([]);
       if (res.data.status === 'waiting') {
-        setStatusMessage(matchId ? 'Waiting for this connection to start Soul Talk too…' : 'Waiting for someone who is also searching…');
+        setStatusMessage(matchId ? 'Waiting for this connection to start Aura Farming too…' : 'Waiting for someone who is also searching…');
       }
     } catch (err) {
-      if (generation === searchGeneration.current) setStatusMessage(err.response?.data?.error || err.message || 'Unable to start Soul Talk.');
+      stopMicrophone();
+      if (generation === searchGeneration.current) setStatusMessage(err.response?.data?.error || err.message || 'Unable to start Aura Farming.');
     } finally {
       starting.current = false;
       if (generation === searchGeneration.current) setLoading(false);
@@ -208,6 +222,7 @@ export default function AuraChat() {
   };
 
   const endChat = async () => {
+    stopMicrophone();
     const current = currentSession.current;
     searchGeneration.current += 1;
     currentSession.current = null;
@@ -226,6 +241,7 @@ export default function AuraChat() {
   const seconds = (session?.secondsRemaining || 0) % 60;
   const timerLabel = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 
+  if (!session && !matchId) return <div className="min-h-screen bg-aura-deep pb-24"><FarmingLobby mode={mode} setMode={setMode} filters={filters} setFilters={setFilters} onStart={startSession} loading={loading} statusMessage={statusMessage}/><BottomNav/></div>;
   if (!session) {
     return (
       <div className="min-h-screen bg-aura-deep flex flex-col items-center justify-center px-7 pb-24">
@@ -236,11 +252,11 @@ export default function AuraChat() {
         </div>
 
         <h1 className="editorial-title text-center">
-          {matchId ? 'Soul Talk' : 'A conversation, first.'}
+          {matchId ? 'Aura Farming' : 'A conversation, first.'}
         </h1>
         <p className="text-center text-gray-400 text-sm mt-3 px-4">
           {matchId
-            ? 'Your conversation begins when you both start Soul Talk. You will have 5 minutes together.'
+            ? 'Your conversation begins when you both start Aura Farming. You will have 5 minutes together.'
             : 'Meet someone who is also searching right now. Five minutes, just the two of you.'}
         </p>
 
@@ -348,10 +364,10 @@ export default function AuraChat() {
         </div>
       )}
 
-      <div ref={listRef} className="chat-messages px-4 py-4 space-y-3">
+      {session.mode==='call'&&!chatEnded?<RandomAudioCall session={session} stream={callStream.current} onEnd={endChat}/>:<div ref={listRef} className="chat-messages px-4 py-4 space-y-3">
         {messages.length === 0 ? (
           <div className="text-center text-gray-500 text-sm pt-10">
-            {chatEnded ? 'Your 5-minute Soul Talk is complete.' : 'Say hi and start the vibe.'}
+            {chatEnded ? 'Your 5-minute Aura Farming is complete.' : 'Say hi and start the vibe.'}
           </div>
         ) : (
           messages.map(msg => (
@@ -363,9 +379,9 @@ export default function AuraChat() {
             </div>
           ))
         )}
-      </div>
+      </div>}
 
-      {!chatEnded ? (
+      {!chatEnded && session.mode!=='call' ? (
         <div className="px-3 py-3 bg-aura-bg border-t border-aura-border pb-6">
           <div className="flex gap-2">
             <input
@@ -386,7 +402,7 @@ export default function AuraChat() {
             End Chat
           </button>
         </div>
-      ) : (
+      ) : chatEnded ? (
         <div className="px-4 pt-2">
           {matchId ? (
             <div className="space-y-3">
@@ -408,7 +424,7 @@ export default function AuraChat() {
             </div>
           )}
         </div>
-      )}
+      ) : null}
 
       <BottomNav />
     </div>

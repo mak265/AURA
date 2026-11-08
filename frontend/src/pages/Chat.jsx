@@ -219,16 +219,16 @@ export default function Chat() {
           <div className="w-24 h-24 rounded-full aura-orb flex items-center justify-center text-5xl mb-6 shadow-aura-glow">
             <Icon name="talk" size={36}/>
           </div>
-          <h2 className="text-xl font-extrabold mb-2">Do the 5-Minute Soul Talk First</h2>
+          <h2 className="text-xl font-extrabold mb-2">Do the 5-Minute Aura Farming First</h2>
           <p className="text-sm text-gray-400 mb-6">
-            Connect anonymously before you chat. Finish the 5-minute Soul Talk with {revealedIdentity?.realName || 'this aura'} to unlock direct messaging.
+            Connect anonymously before you chat. Finish the 5-minute Aura Farming with {revealedIdentity?.realName || 'this aura'} to unlock direct messaging.
           </p>
           <button
             onClick={() => navigate(`/aura-chat/${matchId}`)}
             className="aura-btn-primary"
             style={{ background: 'linear-gradient(135deg,#897294,#b38d98)' }}
           >
-            Start Soul Talk
+            Start Aura Farming
           </button>
 
         </div>

@@ -121,7 +121,7 @@ export default function Matches() {
                 <div className="mt-1"><PresenceStatus presence={m} compact/></div>
                 <div className="text-xs text-gray-400 mt-0.5 truncate">
                   {!m.soul_game_completed ? (
-                    <span className="text-aura-violet-light">Start with a 5-minute Soul Talk</span>
+                    <span className="text-aura-violet-light">Start with a 5-minute Aura Farming</span>
                   ) : (
                     m.last_message || 'Start a conversation'
                   )}

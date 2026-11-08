@@ -39,7 +39,7 @@ before(async () => {
   await pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname,'../../db/migrations/010_conversation_actions.sql'),'utf8'));
   await pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname,'../../db/migrations/015_text_moderation.sql'),'utf8'));
   for(const file of ['011_message_reactions.sql','012_message_removal.sql'])await pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname,'../../db/migrations',file),'utf8'));
-  for(const file of ['016_safety_reports.sql','017_admin_management.sql','018_report_evidence_retention.sql'])await pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname,'../../db/migrations',file),'utf8'));
+  for(const file of ['016_safety_reports.sql','017_admin_management.sql','018_report_evidence_retention.sql','020_aura_farming.sql'])await pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname,'../../db/migrations',file),'utf8'));
   const app = express();
   app.use(express.json());
   app.use('/profile',require('../../src/routes/profile'));
@@ -49,7 +49,7 @@ before(async () => {
   await new Promise(resolve => server.once('listening', resolve));
   baseUrl = 'http://127.0.0.1:' + server.address().port;
 });
-beforeEach(async () => { await pool.query('TRUNCATE report_message_evidence, safety_reports, account_warnings, daily_app_usage, moderation_state, hidden_messages, message_reactions, conversation_preferences, aura_sessions, matches, blocks, aura_session_answers, aura_session_messages, messages, likes, aura_requests'); await pool.query("UPDATE users SET settings='{}'::jsonb"); });
+beforeEach(async () => { await pool.query('TRUNCATE farming_signals, farming_usage, report_message_evidence, safety_reports, account_warnings, daily_app_usage, moderation_state, hidden_messages, message_reactions, conversation_preferences, aura_sessions, matches, blocks, aura_session_answers, aura_session_messages, messages, likes, aura_requests'); await pool.query("UPDATE users SET settings='{}'::jsonb,premium_until=NULL,age=NULL,gender=NULL,religion=NULL"); });
 after(async () => {
   if (server) await new Promise(resolve => server.close(resolve));
   db.pool = originalPool;
@@ -132,6 +132,85 @@ async function request(userId, path, body) {
   });
   return { status: response.status, body: await response.json() };
 }
+
+test('Farming separates queues and charges both people only once on successful pairing',async()=>{
+ const chat=await startSearch(1),call=await startSearch(2,null,{mode:'call'});
+ assert.notEqual(chat,call);assert.equal((await pool.query('SELECT * FROM farming_usage')).rowCount,0);
+ assert.equal(await startSearch(3,null,{mode:'call'}),call);
+ assert.equal((await session(chat)).status,'waiting');
+ await startSearch(2,null,{mode:'call'});
+ for(const id of [2,3])assert.equal((await pool.query('SELECT calls FROM farming_usage WHERE user_id=$1',[id])).rows[0].calls,1);
+});
+test('free age and gender filters are reciprocal and unknown ages do not match a range',async()=>{
+ await pool.query("UPDATE users SET age=25,gender='Female' WHERE id=1");
+ await pool.query("UPDATE users SET age=28,gender='Male' WHERE id=2");
+ const a=await startSearch(1,null,{filters:{ageMin:24,ageMax:30,gender:'Male'}});
+ const b=await startSearch(2,null,{filters:{gender:'Male'}});assert.notEqual(a,b);
+ assert.notEqual(await startSearch(3),a);
+ assert.equal(await startSearch(2,null,{filters:{gender:'Female',ageMin:20,ageMax:26}}),a);
+});
+test('religion is premium-only and queued religion filters remain enforced',async()=>{
+ await assert.rejects(startSearch(1,null,{filters:{religion:'Catholic'}}),e=>e.code==='PREMIUM_REQUIRED');
+ await pool.query("UPDATE users SET premium_until=NOW()+INTERVAL '1 day',religion='Catholic' WHERE id=1");
+ await pool.query("UPDATE users SET religion='Muslim' WHERE id=2");
+ const a=await startSearch(1,null,{filters:{religion:'Catholic'}});
+ assert.notEqual(await startSearch(2),a);
+ await pool.query("UPDATE users SET religion='Catholic' WHERE id=3");
+ assert.equal(await startSearch(3),a);
+});
+test('five chats and three calls are independent and reset in a fixed 24-hour window',async()=>{
+ await pool.query('INSERT INTO farming_usage(user_id,chats,calls) VALUES(1,5,2)');
+ await assert.rejects(startSearch(1),e=>e.code==='DAILY_LIMIT');
+ const call=await startSearch(1,null,{mode:'call'});await startSearch(2,null,{mode:'call'});
+ await pool.query("UPDATE aura_sessions SET status='ended' WHERE id=$1",[call]);
+ await assert.rejects(startSearch(1,null,{mode:'call'}),e=>e.code==='DAILY_LIMIT');
+ const before=(await pool.query('SELECT window_started_at FROM farming_usage WHERE user_id=1')).rows[0].window_started_at;
+ await assert.rejects(startSearch(1),e=>e.code==='DAILY_LIMIT');
+ assert.equal(+(await pool.query('SELECT window_started_at FROM farming_usage WHERE user_id=1')).rows[0].window_started_at,+before);
+ await pool.query("UPDATE farming_usage SET window_started_at=NOW()-INTERVAL '24 hours' WHERE user_id=1");
+ const chat=await startSearch(1);assert.equal(await startSearch(3),chat);
+ const usage=(await pool.query('SELECT * FROM farming_usage WHERE user_id=1')).rows[0];assert.equal(usage.chats,1);assert.equal(usage.calls,0);
+});
+test('premium bypasses quota but expired premium cannot pair queued religion searches',async()=>{
+ await pool.query("UPDATE users SET premium_until=NOW()+INTERVAL '1 day',religion='Catholic' WHERE id IN(1,2)");
+ await pool.query('INSERT INTO farming_usage(user_id,chats,calls) VALUES(1,99,99)');
+ const a=await startSearch(1,null,{filters:{religion:'Catholic'}});
+ await pool.query("UPDATE users SET premium_until=NOW()-INTERVAL '1 second' WHERE id=1");
+ assert.notEqual(await startSearch(2),a);
+ await assert.rejects(startSearch(1,null,{filters:{religion:'Catholic'}}),e=>e.code==='PREMIUM_REQUIRED');
+ await assert.rejects(startSearch(1),e=>e.code==='DAILY_LIMIT');
+});
+test('concurrent joins cannot overspend; exhausted waiting owners are skipped',async()=>{
+ const a=await startSearch(1);
+ const ids=await Promise.all([startSearch(2),startSearch(2),startSearch(2)]);assert.ok(ids.every(id=>id===a));
+ assert.equal((await pool.query('SELECT chats FROM farming_usage WHERE user_id=2')).rows[0].chats,1);
+ await pool.query("UPDATE aura_sessions SET status='ended'");
+ const wait=await startSearch(3);await pool.query('INSERT INTO farming_usage(user_id,chats) VALUES(3,5)');
+ assert.notEqual(await startSearch(4),wait);
+});
+test('API rejects forged premium and invalid filters and exposes authoritative allowance',async()=>{
+ for(const body of [{mode:'video'},{filters:{ageMin:17}},{filters:{ageMin:30,ageMax:20}},{filters:{ageMax:'30'}},{filters:{gender:[]}}])assert.equal((await request(1,'/start',body)).status,400);
+ assert.equal((await request(1,'/start',{premium:true,filters:{religion:'Catholic'}})).status,403);
+ const result=await request(1,'/allowance');assert.equal(result.status,200);assert.equal(result.body.chatsRemaining,5);assert.equal(result.body.callsRemaining,3);assert.equal(result.body.premium,false);
+});
+test('call signaling requires an active call, membership and correct offer/answer roles',async()=>{
+ const id=await startSearch(1,null,{mode:'call'});
+ assert.equal((await request(1,'/'+id+'/signals',{type:'offer',sdp:'test'})).status,409);
+ await startSearch(2,null,{mode:'call'});
+ assert.equal((await request(3,'/'+id+'/signals')).status,404);
+ assert.equal((await request(3,'/'+id+'/signals',{type:'offer',sdp:'test'})).status,404);
+ assert.equal((await request(2,'/'+id+'/signals',{type:'offer',sdp:'test'})).status,403);
+ assert.equal((await request(1,'/'+id+'/signals',{type:'offer',sdp:'offer'})).status,200);
+ assert.equal((await request(2,'/'+id+'/signals',{type:'answer',sdp:'answer'})).status,200);
+ const remote=await request(2,'/'+id+'/signals');assert.equal(remote.body.length,1);assert.equal(remote.body[0].payload.sdp,'offer');
+ assert.equal((await request(2,'/'+id+'/signals?after='+remote.body[0].id)).body.length,0);
+ assert.equal((await request(2,'/'+id+'/signals',{type:'candidate',candidate:{candidate:'ice'}})).status,200);
+ assert.equal((await request(1,'/'+id+'/signals',{type:'offer',sdp:'x'.repeat(21000)})).status,400);
+ await pool.query("UPDATE aura_sessions SET status='ended' WHERE id=$1",[id]);
+ assert.equal((await request(2,'/'+id+'/signals')).status,409);
+ await require('../../src/auraFarming').cleanupSignals();
+ assert.equal((await pool.query('SELECT * FROM farming_signals WHERE session_id=$1',[id])).rowCount,0);
+});
 test('API waits for mutual search, then returns a running timer to both people', async () => {
   const first = await request(1, '/start', {});
   assert.equal(first.body.status, 'waiting');

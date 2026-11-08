@@ -4,7 +4,7 @@ import Icon from './Icon';
 const items = [
   { path: '/feed', label: 'Journal', icon: 'feed' },
   { path: '/discover', label: 'Discover', icon: 'discover' },
-  { path: '/aura-chat', label: 'Soul Talk', icon: 'talk' },
+  { path: '/aura-chat', label: 'Aura Farming', icon: 'talk' },
   { path: '/matches', label: 'Connections', icon: 'heart' },
   { path: '/profile', label: 'You', icon: 'profile' },
 ];

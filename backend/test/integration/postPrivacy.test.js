@@ -474,7 +474,12 @@ test('admin RBAC denies forged roles, limits staff actions and protects audit an
  assert.equal((await request(9502,'/admin/users/9504/action','POST',{action:'unban',reason:'Appeal accepted after review.'})).status,200);
  assert.equal((await request(9504,'/profile')).status,401); // Old session stays revoked after unban.
  assert.equal((await request(9501,'/admin/users/9505')).status,200);
- const audit=(await request(9501,'/admin/audit')).body.events;assert.ok(audit.some(event=>event.action==='user_warn'));assert.ok(audit.some(event=>event.action==='user_ban'));assert.ok(audit.some(event=>event.action==='user_details_viewed'));
+ for(const actor of [9502,9503,9505])assert.equal((await request(actor,'/admin/users/9505/action','POST',{action:'premium',hours:720,reason:'Development Premium grant'})).status,403);
+ assert.equal((await request(9501,'/admin/users/9505/action','POST',{action:'premium',hours:720,reason:'Development Premium grant'})).status,200);
+ assert.ok(new Date((await pool.query('SELECT premium_until FROM users WHERE id=9505')).rows[0].premium_until)>new Date());
+ assert.equal((await request(9501,'/admin/users/9505/action','POST',{action:'unpremium',reason:'Development grant removed'})).status,200);
+ assert.equal((await pool.query('SELECT premium_until FROM users WHERE id=9505')).rows[0].premium_until,null);
+ const audit=(await request(9501,'/admin/audit')).body.events;assert.ok(audit.some(event=>event.action==='user_warn'));assert.ok(audit.some(event=>event.action==='user_ban'));assert.ok(audit.some(event=>event.action==='user_details_viewed'));assert.ok(audit.some(event=>event.action==='user_premium'));
  await assert.rejects(pool.query('DELETE FROM management_audit WHERE id=$1',[audit[0].id]),/append-only/);
 });
 test('superadmin creates management accounts, password rotation is enforced and role changes revoke sessions',async()=>{

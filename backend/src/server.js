@@ -72,6 +72,7 @@ io.on('connection', socket => {
 });
 
 require('./reportEvidence').startEvidenceCleanup();
+require('./auraFarming').startSignalCleanup();
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {

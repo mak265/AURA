@@ -93,7 +93,7 @@ export default function Profile() {
     </section>
     <section className="mx-5 mb-5 aura-card p-4">
       <div className="flex items-center justify-between gap-4"><div><h2 className="text-sm font-medium">Private dating mode</h2><p className="text-[10px] text-aura-violet-light mt-1">{profile.settings?.private_dating?'On · Your visibility is limited':'Off · Your aura can be discovered'}</p></div><button type="button" role="switch" aria-checked={!!profile.settings?.private_dating} aria-label="Private dating mode" disabled={privacySaving} onClick={togglePrivateDating} className={`w-12 h-7 rounded-full p-1 transition-colors shrink-0 ${profile.settings?.private_dating?'bg-aura-violet':'bg-aura-elevated border border-aura-border'}`}><span className={`block w-5 h-5 rounded-full bg-white transition-transform ${profile.settings?.private_dating?'translate-x-5':'translate-x-0'}`}/></button></div>
-      <p className="text-xs text-gray-400 leading-relaxed mt-3">Only people you send an Aura to and your existing connections can discover your profile and posts. Each post's audience still applies. Soul Talk also respects these visibility limits.</p>
+      <p className="text-xs text-gray-400 leading-relaxed mt-3">Only people you send an Aura to and your existing connections can discover your profile and posts. Each post's audience still applies. Aura Farming also respects these visibility limits.</p>
       {privacyError&&<p role="alert" className="text-xs text-red-400 mt-2">{privacyError}</p>}
     </section>
     <nav aria-label="Profile sections" className="profile-tabs">{['posts','about'].map(value=><button key={value} aria-pressed={tab===value} className={tab===value?'active':''} onClick={()=>setTab(value)}>{value==='posts'?'Posts':'About'}</button>)}</nav>
