@@ -1,5 +1,5 @@
 {
-  "version": "2026-11-08.2",
+  "version": "2026-11-08.3",
   "documents": [
     {
       "title": "Terms of Use",
@@ -18,7 +18,7 @@
         ],
         [
           "Aura Farming access",
-          "Free accounts receive five random chat pairings and three random audio-call pairings per fixed 24-hour window, starting at the first pairing. Waiting or cancelled searches do not use an allowance. Age and gender filters are free. Religion filters and unlimited random pairings require active Premium access. Premium billing is not yet available in this development version."
+          "Free accounts receive ten random chat pairings, ten random audio-call pairings and three uses of a religion filter per fixed 24-hour window, starting at the first pairing. Religion-filter uses are shared across chat and call and are charged only to a participant who selected a religion filter. A filtered pairing also uses one normal chat or call allowance. Waiting or cancelled searches do not use allowances. Age and gender filters are free. Active Premium access provides unlimited random pairings and religion-filter uses. Premium billing is not yet available in this development version."
         ]
       ]
     },

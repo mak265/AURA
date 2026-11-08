@@ -6,6 +6,7 @@ const db = require('./db');
 const SEARCH_LEASE_SECONDS = 90;
 async function startSearch(userId, partnerId = null, options = {}) {
   const {mode,filters} = parseOptions(options);
+  if(partnerId!==null&&Object.values(filters).some(Boolean))throw Object.assign(new Error('Matching filters apply only to random searches.'),{status:400});
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
@@ -42,8 +43,8 @@ async function startSearch(userId, partnerId = null, options = {}) {
       LEFT JOIN farming_usage usage ON usage.user_id=candidate.id
       WHERE s.mode=$3 AND s.user1_id != $1
         AND candidate.banned_at IS NULL AND seeker.banned_at IS NULL
-        AND ($2::integer IS NOT NULL OR candidate.premium_until>NOW() OR usage.user_id IS NULL OR usage.window_started_at+INTERVAL '24 hours'<=NOW() OR CASE WHEN $3='call' THEN usage.calls<3 ELSE usage.chats<5 END)
-        AND (COALESCE(s.search_filters->>'religion','')='' OR candidate.premium_until>NOW())
+        AND ($2::integer IS NOT NULL OR candidate.premium_until>NOW() OR usage.user_id IS NULL OR usage.window_started_at+INTERVAL '24 hours'<=NOW() OR CASE WHEN $3='call' THEN usage.calls<10 ELSE usage.chats<10 END)
+        AND (COALESCE(s.search_filters->>'religion','')='' OR candidate.premium_until>NOW() OR usage.user_id IS NULL OR usage.window_started_at+INTERVAL '24 hours'<=NOW() OR usage.religion_uses<3)
         AND (($4::jsonb->>'ageMin') IS NULL OR candidate.age>=($4::jsonb->>'ageMin')::int)
         AND (($4::jsonb->>'ageMax') IS NULL OR candidate.age<=($4::jsonb->>'ageMax')::int)
         AND (COALESCE($4::jsonb->>'gender','')='' OR LOWER(candidate.gender)=LOWER($4::jsonb->>'gender'))
@@ -66,9 +67,9 @@ async function startSearch(userId, partnerId = null, options = {}) {
     let result;
     if (waiting.rowCount) {
       if (partnerId === null) {
-        const owner = await client.query('SELECT user1_id FROM aura_sessions WHERE id=$1',[waiting.rows[0].id]);
-        await charge(client,owner.rows[0].user1_id,mode);
-        await charge(client,userId,mode);
+        const owner = await client.query('SELECT user1_id,search_filters FROM aura_sessions WHERE id=$1',[waiting.rows[0].id]);
+        await charge(client,owner.rows[0].user1_id,mode,!!owner.rows[0].search_filters.religion);
+        await charge(client,userId,mode,!!filters.religion);
       }
       result = await client.query(`UPDATE aura_sessions SET user2_id = $1, status = 'active',
         created_at = NOW(), search_expires_at = NULL WHERE id = $2 RETURNING id`, [userId, waiting.rows[0].id]);

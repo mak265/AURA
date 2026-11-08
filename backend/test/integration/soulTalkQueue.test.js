@@ -44,7 +44,7 @@ before(async () => {
   await pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname,'../../db/migrations/010_conversation_actions.sql'),'utf8'));
   await pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname,'../../db/migrations/015_text_moderation.sql'),'utf8'));
   for(const file of ['011_message_reactions.sql','012_message_removal.sql'])await pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname,'../../db/migrations',file),'utf8'));
-  for(const file of ['016_safety_reports.sql','017_admin_management.sql','018_report_evidence_retention.sql','020_aura_farming.sql'])await pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname,'../../db/migrations',file),'utf8'));
+  for(const file of ['016_safety_reports.sql','017_admin_management.sql','018_report_evidence_retention.sql','020_aura_farming.sql','021_farming_religion_trial.sql'])await pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname,'../../db/migrations',file),'utf8'));
   const app = express();
   app.use(express.json());
   app.use('/profile',require('../../src/routes/profile'));
@@ -199,17 +199,52 @@ test('free age and gender filters are reciprocal and unknown ages do not match a
  assert.notEqual(await startSearch(3),a);
  assert.equal(await startSearch(2,null,{filters:{gender:'Female',ageMin:20,ageMax:26}}),a);
 });
-test('religion is premium-only and queued religion filters remain enforced',async()=>{
- await assert.rejects(startSearch(1,null,{filters:{religion:'Catholic'}}),e=>e.code==='PREMIUM_REQUIRED');
- await pool.query("UPDATE users SET premium_until=NOW()+INTERVAL '1 day',religion='Catholic' WHERE id=1");
+test('religion has a free trial and queued religion filters remain enforced',async()=>{
+ await pool.query("UPDATE users SET religion='Catholic' WHERE id=1");
  await pool.query("UPDATE users SET religion='Muslim' WHERE id=2");
  const a=await startSearch(1,null,{filters:{religion:'Catholic'}});
  assert.notEqual(await startSearch(2),a);
  await pool.query("UPDATE users SET religion='Catholic' WHERE id=3");
  assert.equal(await startSearch(3),a);
 });
-test('five chats and three calls are independent and reset in a fixed 24-hour window',async()=>{
- await pool.query('INSERT INTO farming_usage(user_id,chats,calls) VALUES(1,5,2)');
+test('religion trial counts only the filter owner, shares three uses across modes and resets with the window',async()=>{
+ await pool.query("UPDATE users SET religion='Catholic' WHERE id IN(1,2)");
+ for(const mode of ['chat','call','chat']){
+  const id=await startSearch(1,null,{mode,filters:{religion:'Catholic'}});
+  const before=(await request(1,'/allowance')).body.religionRemaining;
+  assert.equal((await pool.query('SELECT * FROM farming_usage WHERE user_id=1')).rows[0]?.religion_uses||0,3-before);
+  assert.equal(await startSearch(2,null,{mode}),id);
+  await startSearch(2,null,{mode}); // A duplicate join does not spend again.
+  assert.equal((await request(1,'/allowance')).body.religionRemaining,before-1);
+  assert.equal((await request(2,'/allowance')).body.religionRemaining,3);
+  await pool.query("UPDATE aura_sessions SET status='ended' WHERE id=$1",[id]);
+ }
+ await assert.rejects(startSearch(1,null,{filters:{religion:'Catholic'}}),e=>e.code==='RELIGION_TRIAL_LIMIT');
+ const plain=await startSearch(1);assert.equal(await startSearch(2),plain);
+ assert.equal((await request(1,'/allowance')).body.religionRemaining,0);
+ await pool.query("UPDATE aura_sessions SET status='ended'");
+ await pool.query("UPDATE farming_usage SET window_started_at=NOW()-INTERVAL '24 hours' WHERE user_id=1");
+ const next=await startSearch(1,null,{filters:{religion:'Catholic'}});assert.equal(await startSearch(2),next);
+ const usage=(await pool.query('SELECT * FROM farming_usage WHERE user_id=1')).rows[0];
+ assert.equal(usage.religion_uses,1);assert.equal(usage.chats,1);assert.equal(usage.calls,0);
+});
+test('a last religion trial cannot be overspent by concurrent joins and exhausted queued owners are excluded',async()=>{
+ await pool.query("UPDATE users SET religion='Catholic'");
+ await pool.query('INSERT INTO farming_usage(user_id,religion_uses) VALUES(1,2)');
+ const id=await startSearch(1,null,{filters:{religion:'Catholic'}});
+ await Promise.all([startSearch(2),startSearch(2),startSearch(3)]);
+ assert.equal((await pool.query('SELECT religion_uses FROM farming_usage WHERE user_id=1')).rows[0].religion_uses,3);
+ await pool.query("UPDATE aura_sessions SET status='ended'");
+ await pool.query('UPDATE farming_usage SET religion_uses=2 WHERE user_id=1');
+ const waiting=await startSearch(1,null,{filters:{religion:'Catholic'}});
+ await pool.query('UPDATE farming_usage SET religion_uses=3 WHERE user_id=1');
+ assert.notEqual(await startSearch(4),waiting);
+ await pool.query('INSERT INTO matches(user1_id,user2_id) VALUES(1,2)');
+ await assert.rejects(startSearch(1,2,{filters:{religion:'Catholic'}}),e=>e.status===400);
+ assert.ok(id);
+});
+test('ten chats and ten calls are independent and reset in a fixed 24-hour window',async()=>{
+ await pool.query('INSERT INTO farming_usage(user_id,chats,calls) VALUES(1,10,9)');
  await assert.rejects(startSearch(1),e=>e.code==='DAILY_LIMIT');
  const call=await startSearch(1,null,{mode:'call'});await startSearch(2,null,{mode:'call'});
  await pool.query("UPDATE aura_sessions SET status='ended' WHERE id=$1",[call]);
@@ -223,11 +258,11 @@ test('five chats and three calls are independent and reset in a fixed 24-hour wi
 });
 test('premium bypasses quota but expired premium cannot pair queued religion searches',async()=>{
  await pool.query("UPDATE users SET premium_until=NOW()+INTERVAL '1 day',religion='Catholic' WHERE id IN(1,2)");
- await pool.query('INSERT INTO farming_usage(user_id,chats,calls) VALUES(1,99,99)');
+ await pool.query('INSERT INTO farming_usage(user_id,chats,calls,religion_uses) VALUES(1,99,99,99)');
  const a=await startSearch(1,null,{filters:{religion:'Catholic'}});
  await pool.query("UPDATE users SET premium_until=NOW()-INTERVAL '1 second' WHERE id=1");
  assert.notEqual(await startSearch(2),a);
- await assert.rejects(startSearch(1,null,{filters:{religion:'Catholic'}}),e=>e.code==='PREMIUM_REQUIRED');
+ await assert.rejects(startSearch(1,null,{filters:{religion:'Catholic'}}),e=>e.code==='RELIGION_TRIAL_LIMIT');
  await assert.rejects(startSearch(1),e=>e.code==='DAILY_LIMIT');
 });
 test('concurrent joins cannot overspend; exhausted waiting owners are skipped',async()=>{
@@ -235,13 +270,14 @@ test('concurrent joins cannot overspend; exhausted waiting owners are skipped',a
  const ids=await Promise.all([startSearch(2),startSearch(2),startSearch(2)]);assert.ok(ids.every(id=>id===a));
  assert.equal((await pool.query('SELECT chats FROM farming_usage WHERE user_id=2')).rows[0].chats,1);
  await pool.query("UPDATE aura_sessions SET status='ended'");
- const wait=await startSearch(3);await pool.query('INSERT INTO farming_usage(user_id,chats) VALUES(3,5)');
+ const wait=await startSearch(3);await pool.query('INSERT INTO farming_usage(user_id,chats) VALUES(3,10)');
  assert.notEqual(await startSearch(4),wait);
 });
 test('API rejects forged premium and invalid filters and exposes authoritative allowance',async()=>{
  for(const body of [{mode:'video'},{filters:{ageMin:17}},{filters:{ageMin:30,ageMax:20}},{filters:{ageMax:'30'}},{filters:{gender:[]}}])assert.equal((await request(1,'/start',body)).status,400);
- assert.equal((await request(1,'/start',{premium:true,filters:{religion:'Catholic'}})).status,403);
- const result=await request(1,'/allowance');assert.equal(result.status,200);assert.equal(result.body.chatsRemaining,5);assert.equal(result.body.callsRemaining,3);assert.equal(result.body.premium,false);
+ await pool.query('INSERT INTO farming_usage(user_id,religion_uses) VALUES(1,3)');
+ assert.equal((await request(1,'/start',{premium:true,filters:{religion:'Catholic'}})).body.code,'RELIGION_TRIAL_LIMIT');
+ const result=await request(1,'/allowance');assert.equal(result.status,200);assert.equal(result.body.chatsRemaining,10);assert.equal(result.body.callsRemaining,10);assert.equal(result.body.premium,false);
 });
 test('call signaling requires an active call, membership and correct offer/answer roles',async()=>{
  const id=await startSearch(1,null,{mode:'call'});
