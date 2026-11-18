@@ -4,10 +4,13 @@ const {profileVisibleSql}=require('../profileVisibility');
 const express=require('express'),db=require('../db');
 const {authenticate}=require('../middleware/auth');
 const {visiblePostSql}=require('../postPrivacy');
+const {notifyActivity}=require('../messageAlerts');
 const router=express.Router();router.use(authenticate);
 const visible=`g.expires_at>NOW() AND ${visiblePostSql('g','$1',false)}`;
 router.get('/',async(req,res)=>{try{
+ res.set('Cache-Control','no-store');
  const result=await db.query(`SELECT g.id,g.user_id,g.created_at,g.expires_at,g.visibility,a.aura_name,
+ EXISTS (SELECT 1 FROM glimpse_views v WHERE v.glimpse_id=g.id AND v.user_id=$1) AS viewed,
  CASE WHEN g.user_id=$1 OR EXISTS(SELECT 1 FROM matches m WHERE m.revealed AND ((m.user1_id=$1 AND m.user2_id=g.user_id) OR (m.user2_id=$1 AND m.user1_id=g.user_id))) THEN u.profile_photo ELSE NULL END AS profile_photo
  FROM glimpses g JOIN users u ON u.id=g.user_id LEFT JOIN auras a ON a.user_id=g.user_id WHERE ${visible} ORDER BY g.created_at ASC,g.id ASC`,[req.user.userId]);res.json(result.rows);
 }catch(error){console.error(error);res.status(500).json({error:'Unable to load glimpses.'});}});
@@ -23,6 +26,25 @@ router.post('/:id/reaction',async(req,res)=>{
  const {reaction}=req.body;if(!['like','love','care','haha','wow','sad','angry'].includes(reaction))return res.status(400).json({error:'Choose a valid reaction.'});
  try{const result=await db.query(`INSERT INTO glimpse_views(glimpse_id,user_id,reaction) SELECT g.id,$1,$3 FROM glimpses g WHERE g.id=$2 AND g.user_id!=$1 AND ${visible}
  ON CONFLICT(glimpse_id,user_id) DO UPDATE SET reaction=CASE WHEN glimpse_views.reaction=EXCLUDED.reaction THEN NULL ELSE EXCLUDED.reaction END RETURNING reaction`,[req.user.userId,Number(req.params.id),reaction]);if(!result.rowCount)return res.status(404).json({error:'Glimpse unavailable.'});res.json(result.rows[0]);}catch{res.status(500).json({error:'Unable to react.'});}
+});
+router.post('/:id/reply', async (req, res, next) => {
+  const id = Number(req.params.id), userId = req.user.userId;
+  const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
+  if (!Number.isInteger(id) || id < 1 || id > 2147483647 || !body || body.length > 300 || body.includes('\0')) {
+    return res.status(400).json({ error: 'Write a reply of up to 300 characters.' });
+  }
+  try {
+    const { rows: [glimpse] } = await db.query(`SELECT g.user_id FROM glimpses g WHERE g.id=$2 AND g.user_id<>$1 AND ${visible}`, [userId, id]);
+    if (!glimpse) return res.status(404).json({ error: 'This Glimpse is unavailable.' });
+    if (!await enforceText(req, res, body)) return;
+    const result = await db.query(`INSERT INTO glimpse_replies (glimpse_id, sender_id, body)
+      SELECT g.id, $1, $3 FROM glimpses g WHERE g.id=$2 AND g.user_id<>$1 AND ${visible} RETURNING id`, [userId, id, body]);
+    if (!result.rowCount) return res.status(404).json({ error: 'This Glimpse is unavailable.' });
+    notifyActivity(req.app.get('io'), glimpse.user_id, userId, {
+      path: '/feed?glimpse=' + id, body: 'Someone replied to your Glimpse.',
+    }).catch(error => console.error('Glimpse reply notification failed:', error.code || error.name));
+    res.status(201).json({ id: result.rows[0].id });
+  } catch (error) { next(error); }
 });
 router.get('/:id/activity',async(req,res)=>{try{
  const own=await db.query('SELECT id FROM glimpses WHERE id=$1 AND user_id=$2 AND expires_at>NOW()',[Number(req.params.id),req.user.userId]);if(!own.rowCount)return res.status(404).json({error:'Glimpse unavailable.'});

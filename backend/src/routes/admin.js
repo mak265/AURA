@@ -1,12 +1,34 @@
 const express=require('express'),bcrypt=require('bcryptjs'),db=require('../db');
 const {authenticate}=require('../middleware/auth'),{audit,requireManagement,superOnly,safeError}=require('../management');
+const { router: mfaRouter, isManagementVerified } = require('../managementMfa');
+const { recordManagementNotice, alertManagementNotice } = require('../managementNotices');
 const router=express.Router();router.use(authenticate,requireManagement);
+router.get('/me', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    let mfa = null;
+    if (req.actor.role === 'superadmin' && !req.user.mustChangePassword && !isManagementVerified(req)) {
+      const enrolled = await db.query('SELECT 1 FROM management_mfa WHERE user_id = $1 AND enabled_at IS NOT NULL', [req.actor.id]);
+      mfa = enrolled.rowCount ? 'verify' : 'setup';
+    }
+    res.json({ ...req.actor, must_change_password: req.user.mustChangePassword, mfa });
+  } catch (error) { safeError(res, error); }
+});
+router.use('/mfa', mfaRouter);
+router.use((req, res, next) => {
+  if (req.actor.role === 'superadmin' && !isManagementVerified(req) &&
+      !(req.user.mustChangePassword && req.method === 'POST' && req.path === '/password')) {
+    return res.status(403).json({ code: 'MFA_REQUIRED', error: 'Verify your authenticator to open the management workspace.' });
+  }
+  next();
+});
 router.use('/reports',require('./adminEvidence'));
+router.use('/premium-codes', require('./premiumCodes').adminCodes);
+router.use('/meet-sessions', require('./meetSessions').adminRouter);
 const userFields=`u.id,u.email,u.real_name,u.age,u.gender,u.religion,u.city,u.premium_until,u.management_role,u.created_at,u.last_active_at,u.active_since,u.active_seconds,u.banned_at,u.admin_restricted_until,u.ban_reason,u.admin_restriction_reason,
  EXISTS(SELECT 1 FROM user_presence p WHERE p.user_id=u.id AND p.expires_at>NOW()) AS active_now,
  (SELECT count(*)::int FROM account_warnings w WHERE w.user_id=u.id) AS warning_count`;
 const pageOf=req=>Math.max(0,(Number(req.query.page)||1)-1)*20;
-router.get('/me',(req,res)=>res.json({...req.actor,must_change_password:req.user.mustChangePassword}));
 router.post('/password',async(req,res)=>{
  const {currentPassword,password}=req.body||{};
  if(typeof currentPassword!=='string'||typeof password!=='string'||password.length<12||password.length>128)return res.status(400).json({error:'Use a new password of 12–128 characters.'});
@@ -58,7 +80,7 @@ router.post('/users/:id/action',async(req,res)=>{
  if(action==='restrict'&&![1,24,72,168].includes(hours))return res.status(400).json({error:'Choose 1 hour, 1 day, 3 days or 7 days.'});
  let client;try{client=await db.pool.connect();await client.query('BEGIN');
  if(['premium','unpremium'].includes(action))await client.query('SELECT pg_advisory_xact_lock(68421001)');
- const result=await client.query('SELECT id,management_role,banned_at,admin_restricted_until,premium_until FROM users WHERE id=$1 FOR UPDATE',[target]);
+ const result=await client.query('SELECT id,management_role,banned_at,admin_restricted_until,premium_until,auth_version FROM users WHERE id=$1 FOR UPDATE',[target]);
  if(!result.rowCount||result.rows[0].management_role!=='user'||target===req.actor.id){await client.query('ROLLBACK');return res.status(403).json({error:'This account cannot be managed here.'});}
  const before=result.rows[0];
  if(action==='premium')await client.query("UPDATE users SET premium_until=GREATEST(NOW(),COALESCE(premium_until,NOW()))+$2::int*INTERVAL '1 hour' WHERE id=$1",[target,hours]);
@@ -75,18 +97,30 @@ router.post('/users/:id/action',async(req,res)=>{
  await client.query('DELETE FROM user_presence WHERE user_id=$1',[target]);await client.query("UPDATE aura_sessions SET status='ended' WHERE (user1_id=$1 OR user2_id=$1) AND status IN ('waiting','active')",[target]);
  }
  if(action==='unban')await client.query('UPDATE users SET banned_at=NULL,ban_reason=NULL,auth_version=auth_version+1 WHERE id=$1',[target]);
+ let effectiveUntil=null;
+ if(action==='restrict'||action==='premium'){
+   const {rows:[updated]}=await client.query('SELECT admin_restricted_until,premium_until FROM users WHERE id=$1',[target]);
+   effectiveUntil=action==='restrict'?updated.admin_restricted_until:updated.premium_until;
+ }
+ await recordManagementNotice(client,target,action,reason.trim(),effectiveUntil);
  await audit(client,req.actor,'user_'+action,'user',target,reason.trim(),{before:{banned:!!before.banned_at,restricted_until:before.admin_restricted_until,premium_until:before.premium_until},hours:['restrict','premium'].includes(action)?hours:null});await client.query('COMMIT');
- if(action==='ban'){const io=req.app.get('io');if(io)for(const socket of await io.fetchSockets())if(socket.userId===target)socket.disconnect(true);}
  res.json({ok:true});
+ const io=req.app.get('io');
+ alertManagementNotice(io,target,action==='ban'?before.auth_version:undefined);
+ if(action==='ban'){
+   try{io?.in(`alerts:${target}`).disconnectSockets(true);}
+   catch(error){console.error('Banned account socket cleanup failed:',error.code||error.name);}
+ }
  }catch(error){if(client)await client.query('ROLLBACK');safeError(res,error);}finally{client?.release();}
 });
 router.get('/reports',async(req,res)=>{try{
- const kind=req.query.kind||'all',status=req.query.status||'all';if(!['all','user','post','bug'].includes(kind)||!['all','pending','reviewing','resolved','dismissed'].includes(status))return res.status(400).json({error:'Invalid report filter.'});
+ const kind=req.query.kind||'all',status=req.query.status||'all';if(!['all','user','post','bug','appeal'].includes(kind)||!['all','pending','reviewing','resolved','dismissed'].includes(status))return res.status(400).json({error:'Invalid report filter.'});
  const [rows,count]=await Promise.all([db.query(`SELECT r.id,r.kind,r.reason,r.status,r.created_at,r.assigned_to,a.aura_name AS reporter_name,r.reported_user_id FROM safety_reports r LEFT JOIN auras a ON a.user_id=r.reporter_id WHERE ($1='all' OR r.kind=$1) AND ($2='all' OR r.status=$2) ORDER BY r.created_at DESC LIMIT 20 OFFSET $3`,[kind,status,pageOf(req)]),db.query("SELECT count(*)::int AS total FROM safety_reports WHERE ($1='all' OR kind=$1) AND ($2='all' OR status=$2)",[kind,status])]);res.json({reports:rows.rows,total:count.rows[0].total});
  }catch(error){safeError(res,error);}});
 router.get('/reports/:id',async(req,res)=>{let client;try{
  client=await db.pool.connect();await client.query('BEGIN');const result=await client.query('SELECT * FROM safety_reports WHERE id=$1',[Number(req.params.id)]);if(!result.rowCount){await client.query('ROLLBACK');return res.status(404).json({error:'Report not found.'});}
  const report=result.rows[0];let evidence=null;
+ if(report.kind==='appeal')evidence=(await client.query('SELECT id,action,reason,created_at,effective_until FROM management_notices WHERE id=$1 AND user_id=$2',[report.target_id,report.reporter_id])).rows[0]||null;
  if(report.kind==='post')evidence=(await client.query('SELECT id,caption,image_url,visibility,created_at,moderation_hidden_at FROM posts WHERE id=$1',[report.target_id])).rows[0]||null;
  const conversationId=report.conversation_id||(/^\/chat\/(\d+)$/.exec(report.context_path||'')?.[1]);
  if(report.kind==='user'&&conversationId){
@@ -107,9 +141,11 @@ router.post('/reports/:id/content-action',async(req,res)=>{
  if(req.actor.role==='staff')return res.status(403).json({error:'Only admins can moderate reported posts.'});
  const {action,reason}=req.body||{};if(!['hide_post','restore_post'].includes(action)||typeof reason!=='string'||reason.trim().length<5||reason.length>1000)return res.status(400).json({error:'Choose an action and provide a reason.'});
  let client;try{client=await db.pool.connect();await client.query('BEGIN');const report=await client.query("SELECT target_id FROM safety_reports WHERE id=$1 AND kind='post'",[Number(req.params.id)]);if(!report.rowCount){await client.query('ROLLBACK');return res.status(404).json({error:'Reported post unavailable.'});}
- const post=await client.query('SELECT id,moderation_hidden_at FROM posts WHERE id=$1 FOR UPDATE',[report.rows[0].target_id]);if(!post.rowCount){await client.query('ROLLBACK');return res.status(404).json({error:'The post has been deleted.'});}
+ const post=await client.query('SELECT id,user_id,moderation_hidden_at FROM posts WHERE id=$1 FOR UPDATE',[report.rows[0].target_id]);if(!post.rowCount){await client.query('ROLLBACK');return res.status(404).json({error:'The post has been deleted.'});}
  await client.query('UPDATE posts SET moderation_hidden_at=CASE WHEN $2 THEN NOW() ELSE NULL END,moderation_reason=$3 WHERE id=$1',[post.rows[0].id,action==='hide_post',reason.trim()]);
+ await recordManagementNotice(client,post.rows[0].user_id,action,reason.trim());
  await audit(client,req.actor,action,'post',post.rows[0].id,reason.trim(),{report_id:Number(req.params.id),was_hidden:!!post.rows[0].moderation_hidden_at});await client.query('COMMIT');res.json({ok:true});
+ alertManagementNotice(req.app.get('io'),post.rows[0].user_id);
  }catch(error){if(client)await client.query('ROLLBACK');safeError(res,error);}finally{client?.release();}
 });
 router.get('/team',superOnly,async(req,res)=>{try{const result=await db.query("SELECT id,email,real_name,management_role,must_change_password,created_at FROM users WHERE management_role!='user' ORDER BY created_at,id");res.json(result.rows);}catch(error){safeError(res,error);}});

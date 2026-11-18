@@ -13,6 +13,7 @@ exports.removeMessage=async(req,res)=>{
   const msg=result.rows[0];
   if(action==='delete_for_me')await client.query('INSERT INTO hidden_messages(message_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[msg.id,req.user.userId]);
   else{
+   if(msg.kind==='call'){await client.query('ROLLBACK');return res.status(403).json({error:'Call history cannot be unsent.'});}
    if(msg.sender_id!==req.user.userId){await client.query('ROLLBACK');return res.status(403).json({error:'Only the sender can unsend.'});}
    const deadline=Math.min(new Date(msg.created_at).getTime()+600000,msg.read_at?new Date(msg.read_at).getTime()+300000:Infinity);
    if(msg.unsent_at||new Date(msg.server_now).getTime()>=deadline){await client.query('ROLLBACK');return res.status(409).json({error:'The unsend window has ended.'});}

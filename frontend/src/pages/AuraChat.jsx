@@ -10,11 +10,14 @@ import useMessageReceipts, { messageStatus } from '../hooks/useMessageReceipts';
 import { useAuth } from '../context/AuthContext';
 import Icon from '../components/Icon';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../api/client';
-import BottomNav from '../components/BottomNav';
+import Avatar from '../components/Avatar';
+import './meet-session.css';
 
 const POLL_MS = 3000;
+const SEARCH_WAIT_HINT_MS = 20000;
 function leaveSearch(sessionId) {
   const token = localStorage.getItem('aura_token');
   return fetch(`${api.defaults.baseURL}/aura-chat/${sessionId}/end`, {
@@ -23,7 +26,7 @@ function leaveSearch(sessionId) {
   }).catch(() => {});
 }
 
-export default function AuraChat() {
+export default function AuraChat({ visible = true }) {
   const { matchId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -33,10 +36,11 @@ export default function AuraChat() {
   const starting = useRef(false);
 
   const [mode,setMode]=useState('chat');
-  const [filters,setFilters]=useState({ageMin:'',ageMax:'',gender:'',religion:''});
+  const [filters,setFilters]=useState({ageMin:'',ageMax:'',gender:'',religion:'',workStatus:''});
   const callStream=useRef(null);
   const stopMicrophone=()=>{callStream.current?.getTracks().forEach(t=>t.stop());callStream.current=null;};
   const [session, setSession] = useState(null);
+  const [joinedCall, setJoinedCall] = useState(null);
   const [messages, storeMessages] = useState([]);
   const messageRevision=useRef(0);
   const setMessages=update=>{messageRevision.current++;storeMessages(update);};
@@ -48,13 +52,17 @@ export default function AuraChat() {
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [decisionPending, setDecisionPending] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const [searchTakingLonger, setSearchTakingLonger] = useState(false);
+  const [revealedIdentity, setRevealedIdentity] = useState(null);
+  const sessionId = session?.sessionId;
+  const sessionMatched = session?.status === 'matched';
 
-  useMessageReceipts(messages, session?.sessionId ? `/aura-chat/${session.sessionId}/receipts` : null, user?.user?.id);
+  useMessageReceipts(messages, sessionId && !sessionMatched ? `/aura-chat/${sessionId}/receipts` : null, user?.user?.id, visible);
 
   useEffect(() => { currentSession.current = session; if(session?.status==='ended'||session?.status==='matched')stopMicrophone(); }, [session]);
 
-  // Leaving the Aura Farming page cancels a pending search; tab switching does not.
-  // The server lease also covers lost connections and abrupt browser closure.
+  // The app keeps this screen mounted across tabs. Close the search on page exit.
   useEffect(() => {
     const cancelPendingSearch = () => {
       searchGeneration.current += 1;
@@ -80,10 +88,10 @@ export default function AuraChat() {
   }, []);
 
   useEffect(() => {
-    if (!session?.sessionId) return undefined;
+    if (!sessionId || sessionMatched) return undefined;
     let cancelled = false;
     let polling = false;
-    const id = session.sessionId;
+    const id = sessionId;
     const tick = async () => {
       if (polling) return;
       polling = true;
@@ -91,33 +99,74 @@ export default function AuraChat() {
       try {
         const statusRes = currentSession.current?.status === 'waiting'
           ? await api.post(`/aura-chat/${id}/heartbeat`, {}, { timeout: 5000 })
-          : await api.get(`/aura-chat/${id}/status`);
+          : await api.get(`/aura-chat/${id}/status`, { timeout: 5000 });
         if (cancelled || generation !== searchGeneration.current) return;
+        if (currentSession.current?.status === 'matched') return;
+        setReconnecting(false);
         if (statusRes.data.status === 'ended' && !statusRes.data.partner) {
           currentSession.current = null;
           setSession(null);
-          setStatusMessage('Search expired. Tap below to look again.');
+          stopMicrophone();
+          setStatusMessage('No match found before your search expired. Try again or adjust your filters.');
           return;
         }
-        if (statusRes.data.status === 'active') setStatusMessage('');
         currentSession.current = statusRes.data;
         setSession(statusRes.data);
         if (statusRes.data.canChat) {
           const revision=messageRevision.current;
-          const messagesRes = await api.get(`/aura-chat/${id}/messages`);
+          const messagesRes = await api.get(`/aura-chat/${id}/messages`, { timeout: 5000 });
           if (!cancelled && generation === searchGeneration.current) {if(revision===messageRevision.current)storeMessages(messagesRes.data);setHistoryLoaded(true);}
         }
-        if (statusRes.data.status === 'matched' && statusRes.data.matchId) {
-          navigate(`/chat/${statusRes.data.matchId}`);
-        }
       } catch (err) {
-        if (!cancelled) setStatusMessage(err.response?.data?.error || 'Connection interrupted. Reconnecting…');
+        if (!cancelled && generation === searchGeneration.current) {
+          if (err.response?.status === 404) {
+            currentSession.current = null;
+            setSession(null);
+            setReconnecting(false);
+            stopMicrophone();
+            setStatusMessage('This session is no longer available. You can start a new search.');
+          } else {
+            setReconnecting(true);
+          }
+        }
       } finally { polling = false; }
     };
     tick();
     const interval = setInterval(tick, POLL_MS);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [session?.sessionId, navigate]);
+  }, [sessionId, sessionMatched]);
+
+  useEffect(() => {
+    if (session?.status !== 'waiting') return;
+    const timer = setTimeout(() => setSearchTakingLonger(true), SEARCH_WAIT_HINT_MS);
+    return () => clearTimeout(timer);
+  }, [session?.status, session?.sessionId]);
+
+  const revealedMatchId = session?.status === 'matched' ? session.matchId : null;
+  useEffect(() => {
+    if (!visible || !revealedMatchId) return;
+    const controller = new AbortController();
+    api.get(`/matches/${revealedMatchId}/reveal/status`, { signal: controller.signal, timeout: 5000 })
+      .then(({ data }) => {
+        if (!controller.signal.aborted && data.status === 'mutual') setRevealedIdentity({ ...data, matchId: revealedMatchId });
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [visible, revealedMatchId]);
+
+  const openConnection = () => {
+    if (!revealedMatchId) return;
+    currentSession.current = null;
+    setSession(null);
+    setHistoryLoaded(false);
+    navigate(`/chat/${revealedMatchId}`, { replace: true });
+  };
+
+  useEffect(() => {
+    if (visible && session?.status === 'active' && session.mode === 'call') {
+      setJoinedCall(session.sessionId);
+    }
+  }, [visible, session?.status, session?.mode, session?.sessionId]);
 
   useEffect(() => {
     if (!session?.status || session.status !== 'active' || session.secondsRemaining <= 0) {
@@ -139,16 +188,22 @@ export default function AuraChat() {
     return () => clearInterval(timer);
   }, [session?.status, session?.secondsRemaining]);
 
-  const startSession = async () => {
+  const startSession = async (requestedMode) => {
     if (starting.current) return;
     starting.current = true;
     const generation = ++searchGeneration.current;
     setLoading(true);
     setStatusMessage('');
     setDecisionPending(false);
+    setReconnecting(false);
+    setSearchTakingLonger(false);
+    setRevealedIdentity(null);
+    setHistoryLoaded(false);
+    const nextMode = matchId ? 'chat' : requestedMode === 'call' || requestedMode === 'chat' ? requestedMode : mode;
+    setMode(nextMode);
     try {
-      const body = {mode:matchId?'chat':mode,filters:{...filters,ageMin:filters.ageMin===''?null:Number(filters.ageMin),ageMax:filters.ageMax===''?null:Number(filters.ageMax)}};
-      if(!matchId&&mode==='call') {
+      const body = {mode:nextMode,filters:{...filters,ageMin:filters.ageMin===''?null:Number(filters.ageMin),ageMax:filters.ageMax===''?null:Number(filters.ageMax)}};
+      if(nextMode==='call') {
         if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia||!window.RTCPeerConnection) throw new Error('Calls need a supported browser on HTTPS or localhost.');
         callStream.current=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
         if(generation!==searchGeneration.current){stopMicrophone();return;}
@@ -168,12 +223,11 @@ export default function AuraChat() {
       currentSession.current = res.data;
       setSession(res.data);
       setMessages([]);
-      if (res.data.status === 'waiting') {
-        setStatusMessage(matchId ? 'Waiting for this connection to start Aura Farming too…' : 'Waiting for someone who is also searching…');
-      }
     } catch (err) {
       stopMicrophone();
-      if (generation === searchGeneration.current) setStatusMessage(err.response?.data?.error || err.message || 'Unable to start Aura Farming.');
+      if (generation === searchGeneration.current) setStatusMessage(nextMode === 'call' && err.name === 'NotAllowedError'
+        ? 'Allow microphone access to start a call.'
+        : err.response?.data?.error || err.message || 'Unable to start searching.');
     } finally {
       starting.current = false;
       if (generation === searchGeneration.current) setLoading(false);
@@ -198,23 +252,27 @@ export default function AuraChat() {
 
   const keepTalking = async (earlyReveal = false) => {
     if (!session?.sessionId) return;
+    const id = session.sessionId;
     setLoading(true);
     setStatusMessage('');
     try {
-      const res = await api.post(`/aura-chat/${session.sessionId}/${earlyReveal ? 'reveal' : 'keep-talking'}`);
+      const res = await api.post(`/aura-chat/${id}/${earlyReveal ? 'reveal' : 'keep-talking'}`);
+      if (currentSession.current?.sessionId !== id) return;
       if (res.data.matched) {
         if (res.data.matchId) {
-          navigate(`/chat/${res.data.matchId}`);
+          const matched = { ...currentSession.current, status: 'matched', canChat: false, matchId: res.data.matchId };
+          currentSession.current = matched;
+          setReconnecting(false);
+          setSession(matched);
         }
         return;
       }
       setDecisionPending(true);
-      setStatusMessage('Waiting for the other Aura to decide...');
     } catch (err) {
       console.error(err);
-      setStatusMessage(err.response?.data?.error || 'Failed to save your choice.');
+      if (currentSession.current?.sessionId === id) setStatusMessage(err.response?.data?.error || 'Failed to save your choice.');
     } finally {
-      setLoading(false);
+      if (currentSession.current?.sessionId === id) setLoading(false);
     }
   };
 
@@ -242,7 +300,10 @@ export default function AuraChat() {
     setSession(null);
     setMessages([]);
     setInput('');
+    setLoading(false);
     setDecisionPending(false);
+    setReconnecting(false);
+    setRevealedIdentity(null);
     setStatusMessage('');
     if (current?.sessionId) {
       try { await api.post(`/aura-chat/${current.sessionId}/end`); }
@@ -253,8 +314,18 @@ export default function AuraChat() {
   const minutes = Math.floor((session?.secondsRemaining || 0) / 60);
   const seconds = (session?.secondsRemaining || 0) % 60;
   const timerLabel = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  const backgroundNotice = !visible && session && createPortal(
+    <aside className="aura-message-alert farming-background-notice" aria-label="Meet status">
+      <button type="button" className="farming-background-open" onClick={() => navigate(matchId ? `/aura-chat/${matchId}` : '/aura-chat')}>
+        <Icon name="talk" size={18}/>
+        <span role="status">{session.status === 'waiting' ? 'Searching for a match…' :
+          session.status === 'active' ? 'Match found · Return to Meet' :
+          session.status === 'matched' ? 'Identities revealed · View reveal' : 'Conversation finished · View session'}</span>
+      </button>
+      <button type="button" onClick={endChat}>{session.status === 'waiting' ? 'Cancel' : session.status === 'active' ? 'End' : 'Dismiss'}</button>
+    </aside>, document.body);
 
-  if (!session && !matchId) return <div className="min-h-screen bg-aura-deep pb-24"><FarmingLobby mode={mode} setMode={setMode} filters={filters} setFilters={setFilters} onStart={startSession} loading={loading} statusMessage={statusMessage}/><BottomNav/></div>;
+  if (!session && !matchId) return <div className="mobile-tab-screen bg-aura-deep"><FarmingLobby visible={visible} mode={mode} filters={filters} setFilters={setFilters} onStart={startSession} loading={loading} statusMessage={statusMessage}/></div>;
   if (!session) {
     return (
       <div className="min-h-screen bg-aura-deep flex flex-col items-center justify-center px-7 pb-24">
@@ -265,111 +336,78 @@ export default function AuraChat() {
         </div>
 
         <h1 className="editorial-title text-center">
-          {matchId ? 'Aura Farming' : 'A conversation, first.'}
+          Start an anonymous chat
         </h1>
         <p className="text-center text-gray-400 text-sm mt-3 px-4">
-          {matchId
-            ? 'Your conversation begins when you both start Aura Farming. You will have 5 minutes together.'
-            : 'Meet someone who is also searching right now. Five minutes, just the two of you.'}
+          The five-minute chat starts when both of you are ready.
         </p>
 
         <div className="w-full mt-8 space-y-3">
           <button className="aura-btn-primary" onClick={startSession} disabled={loading}>
-            {loading ? 'Starting...' : matchId ? 'Start a 5-minute conversation' : 'Meet someone new'}
+            {loading ? 'Starting…' : 'Start a 5-minute chat'}
           </button>
           <p className="text-center text-[11px] text-gray-500">
-            {matchId
-              ? 'No questions na. Straight anonymous conversation na agad.'
-              : 'After 5 minutes, both of you can choose to keep talking and unfold if mutual.'}
+            You can reveal your identities if you both agree.
           </p>
           {statusMessage && (
             <p className="text-center text-xs text-aura-gold">{statusMessage}</p>
           )}
         </div>
 
-        <BottomNav />
       </div>
     );
   }
 
   if (session.status === 'waiting') {
     return (
-      <div className="min-h-screen bg-aura-deep flex flex-col items-center justify-center px-7 pb-24 text-center">
-        <div className="aura-finding-radar mb-7">
-          <div className="aura-finding-ping" />
-          <div className="aura-finding-ping delay-1" />
-          <div className="aura-finding-ping delay-2" />
-          <div className="aura-finding-ring" />
-          <div className="aura-finding-ring ring-2" />
-          <div className="aura-finding-ring ring-3" />
-          <div className="aura-finding-dot dot-1" />
-          <div className="aura-finding-dot dot-2" />
-          <div className="aura-finding-dot dot-3" />
-          <div className="aura-finding-core">
-            <Icon name="talk" size={28}/>
-          </div>
+      <>{backgroundNotice}<div className="meet-search bg-aura-deep">
+        <div className="meet-search-motion" aria-hidden="true">
+          <span className="meet-search-bubble"><Icon name={session.mode === 'call' ? 'mic' : 'talk'} size={27}/></span>
+          <span className="meet-search-signal"><i/><i/><i/></span>
+          <span className="meet-search-bubble"><Icon name={session.mode === 'call' ? 'phone' : 'talk'} size={27}/></span>
         </div>
-        <h2 className="text-2xl font-extrabold">Finding an Aura...</h2>
-        <p className="text-sm text-gray-400 mt-3 max-w-xs">
-          Keep this screen open. You will only connect with someone who is actively searching too.
-        </p>
-        <div className="mt-4 text-xs text-aura-violet-light font-semibold inline-flex items-center gap-2">
-          Waiting for a mutual search
-          <span className="aura-finding-dots">
-            <span />
-            <span />
-            <span />
-          </span>
-        </div>
-        {statusMessage && <p className="text-xs text-aura-gold mt-4">{statusMessage}</p>}
-        <button onClick={endChat} className="aura-btn-secondary mt-8">
-          Cancel
-        </button>
-        <BottomNav />
-      </div>
+        <h1>{session.mode === 'call' ? 'Finding a call' : 'Finding a chat'}</h1>
+        <p role="status">{reconnecting ? 'Connection interrupted. Reconnecting to your search…' : searchTakingLonger
+          ? 'Still looking for someone who matches your filters. You can keep browsing while you wait.'
+          : matchId ? 'Waiting for your connection to start the chat too.'
+          : 'We’re looking for someone who is also searching. You can keep browsing AURA.'}</p>
+        <button onClick={endChat} className="aura-btn-secondary">Cancel search</button>
+      </div></>
     );
   }
 
   const chatEnded = session.status === 'ended' || session.status === 'matched';
+  const identity = revealedIdentity?.matchId === revealedMatchId ? revealedIdentity : null;
+  const revealPending = decisionPending || session.revealRequested;
 
   return (
-    <div className="chat-screen with-nav bg-aura-deep">
-      <div className="flex items-center gap-3 px-4 py-3 bg-aura-bg border-b border-aura-border">
-        <button onClick={() => navigate(matchId ? '/matches' : '/feed')} className="text-aura-violet-light">←</button>
-        <div
-          className="w-10 h-10 rounded-full flex items-center justify-center text-lg"
-          style={{ background: session.partner?.aura_color || 'linear-gradient(135deg,#a18baf,#b38d98)' }}
-        >
-          {session.partner?.aura_name?.charAt(0) || 'A'}
+    <>{backgroundNotice}<div className="chat-screen bg-aura-deep meet-conversation">
+      <div className="meet-conversation-header">
+        <button onClick={() => navigate(matchId ? '/matches' : '/feed')} aria-label="Back to AURA" className="meet-conversation-back">←</button>
+        {revealedMatchId ? <Avatar src={identity?.profile_photo} name={identity?.real_name || 'Connection'}/>
+          : <span className="meet-anonymous-icon"><Icon name="profile" size={21}/></span>}
+        <div className="meet-conversation-person">
+          <strong>{identity?.real_name || session.partner?.aura_name || 'Your Aura'}</strong>
+          <span><Icon name={revealedMatchId ? 'heart' : 'lock'} size={13}/>{revealedMatchId ? 'Identity revealed' : 'Identity hidden'}</span>
         </div>
-        <div className="flex-1">
-          <div className="text-sm font-bold">{session.partner?.aura_name || 'Mystery Aura'}</div>
-          <div className="text-[10px] text-gray-400">
-            {chatEnded ? '5-minute talk finished' : 'Anonymous for 5 minutes'}
-          </div>
-        </div>
-        <div className={`px-3 py-1 rounded-full text-xs font-bold ${chatEnded ? 'bg-aura-card text-aura-gold' : 'bg-aura-card text-aura-violet-light'}`}>
-          {chatEnded ? 'Done' : timerLabel}
-        </div><ReportButton sessionId={Number(session.sessionId)} compact/>
+        {!revealedMatchId && <span className="meet-timer">{chatEnded ? 'Ended' : timerLabel}</span>}
+        <ReportButton sessionId={Number(session.sessionId)} compact/>
       </div>
 
-      {!chatEnded && (
-        <div className="mx-4 mt-4 aura-card p-3 text-center text-xs text-gray-300">
-          After one minute, you can both choose to show your identity and keep talking without a timer.
-        </div>
-      )}
+      {revealedMatchId ? <div className="meet-reveal-panel meet-reveal-complete" role="status">
+        <Icon name="spark" size={25}/>
+        <div><strong>{identity?.real_name ? `You connected with ${identity.real_name}` : 'You both chose to reveal'}</strong>
+          <p>Your messages are saved in Connections. You can keep talking without a timer.</p></div>
+      </div> : !chatEnded && <div className="meet-reveal-panel">
+        <Icon name="heart" size={19}/>
+        <div><strong>{revealPending ? 'Waiting for their choice' : session.partnerRevealRequested ? 'They’re ready to reveal' : 'Reveal together'}</strong>
+          <p>{revealPending ? 'Your identity stays hidden until they agree.' : session.canReveal || session.secondsRemaining <= 240
+            ? 'You can keep talking without a timer if you both agree.' : 'Available after one minute. Both people must agree.'}</p></div>
+        {!revealPending && (session.canReveal || session.secondsRemaining <= 240) &&
+          <button className="aura-btn-primary" disabled={loading} onClick={() => keepTalking(true)}>Reveal together</button>}
+      </div>}
 
-      {!chatEnded && (session.canReveal || session.secondsRemaining <= 240) && (
-        <div className="mx-4 mt-3 aura-card p-3 space-y-2">
-          <p className="text-xs text-gray-300 text-center">
-            {session.partnerRevealRequested ? 'They are ready to show their identity. Are you?' : 'Ready to put a name to the conversation?'}
-          </p>
-          <button className="aura-btn-primary !py-3 text-sm" disabled={loading || decisionPending || session.revealRequested} onClick={() => keepTalking(true)}>
-            {decisionPending || session.revealRequested ? 'Waiting for the other person…' : 'Show identity'}
-          </button>
-          <p className="text-[10px] text-gray-400 text-center">Both must agree. Then your identities appear and the timer is removed.</p>
-        </div>
-      )}
+      {reconnecting && !revealedMatchId && <p className="meet-connection-status" role="status">Connection interrupted. Reconnecting…</p>}
 
       {statusMessage && (
         <div className="mx-4 mt-3 p-3 rounded-xl text-center text-xs text-aura-gold" style={{ background: 'rgba(245,158,11,0.1)' }}>
@@ -377,10 +415,11 @@ export default function AuraChat() {
         </div>
       )}
 
-      {session.mode==='call'&&!chatEnded?<RandomAudioCall session={session} stream={callStream.current} onEnd={endChat}/>:<div ref={listRef} className="chat-messages px-4 py-4 space-y-3">
+      {session.mode==='call'&&!chatEnded ? (visible || joinedCall === session.sessionId) &&
+        <RandomAudioCall session={session} stream={callStream.current} onEnd={endChat}/> : <div ref={listRef} className="chat-messages px-4 py-4 space-y-3">
         {messages.length === 0 ? (
           <div className="text-center text-gray-500 text-sm pt-10">
-            {chatEnded ? 'Your 5-minute Aura Farming is complete.' : 'Say hi and start the vibe.'}
+            {chatEnded ? 'Your five-minute conversation is complete.' : 'Say hi when you’re ready.'}
           </div>
         ) : (
           messages.map(msg => (
@@ -404,10 +443,13 @@ export default function AuraChat() {
               onChange={e => {setInput(e.target.value);updateTyping(e.target.value);}}
               onBlur={stopTyping}
               onKeyDown={e => e.key === 'Enter' && sendMessage()}
-              placeholder="Type anonymously..."
+              aria-label="Anonymous message"
+              placeholder="Write a message…"
             />
             <button
               onClick={sendMessage}
+              aria-label="Send message"
+              disabled={!input.trim()}
               className="w-10 h-10 rounded-xl bg-gradient-to-br from-aura-violet to-aura-pink flex items-center justify-center"
             >
               <Icon name="arrow" size={20}/>
@@ -419,19 +461,19 @@ export default function AuraChat() {
         </div>
       ) : chatEnded ? (
         <div className="px-4 pt-2">
-          {matchId ? (
+          {revealedMatchId ? <button className="aura-btn-primary meet-continue" onClick={openConnection}>Continue conversation <Icon name="arrow" size={17}/></button> : matchId ? (
             <div className="space-y-3">
               <button className="aura-btn-primary" onClick={unlockDirectMessages} disabled={loading}>
                 {loading ? 'Unlocking...' : 'Unlock direct messages'}
               </button>
               <button className="aura-btn-secondary" onClick={() => navigate('/matches')}>
-                Back to Matches
+                Back to Connections
               </button>
             </div>
           ) : (
             <div className="space-y-3">
-              <button className="aura-btn-primary" onClick={() => keepTalking(false)} disabled={loading || decisionPending}>
-                {decisionPending ? 'Waiting for other Aura...' : 'Keep talking'}
+              <button className="aura-btn-primary" onClick={() => keepTalking(false)} disabled={loading || revealPending}>
+                {revealPending ? 'Waiting for their choice…' : 'Reveal and keep talking'}
               </button>
               <button className="aura-btn-secondary" onClick={endChat}>
                 End Chat
@@ -441,7 +483,6 @@ export default function AuraChat() {
         </div>
       ) : null}
 
-      <BottomNav />
-    </div>
+    </div></>
   );
 }

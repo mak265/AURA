@@ -49,10 +49,13 @@ async function startSearch(userId, partnerId = null, options = {}) {
         AND (($4::jsonb->>'ageMax') IS NULL OR candidate.age<=($4::jsonb->>'ageMax')::int)
         AND (COALESCE($4::jsonb->>'gender','')='' OR LOWER(candidate.gender)=LOWER($4::jsonb->>'gender'))
         AND (COALESCE($4::jsonb->>'religion','')='' OR LOWER(candidate.religion)=LOWER($4::jsonb->>'religion'))
+        AND (COALESCE($4::jsonb->>'workStatus','')='' OR candidate.work_status=$4::jsonb->>'workStatus')
         AND ((s.search_filters->>'ageMin') IS NULL OR seeker.age>=(s.search_filters->>'ageMin')::int)
         AND ((s.search_filters->>'ageMax') IS NULL OR seeker.age<=(s.search_filters->>'ageMax')::int)
         AND (COALESCE(s.search_filters->>'gender','')='' OR LOWER(seeker.gender)=LOWER(s.search_filters->>'gender'))
-        AND (COALESCE(s.search_filters->>'religion','')='' OR LOWER(seeker.religion)=LOWER(s.search_filters->>'religion')) AND s.user2_id IS NULL AND s.status = 'waiting'
+        AND (COALESCE(s.search_filters->>'religion','')='' OR LOWER(seeker.religion)=LOWER(s.search_filters->>'religion'))
+        AND (COALESCE(s.search_filters->>'workStatus','')='' OR seeker.work_status=s.search_filters->>'workStatus')
+        AND s.user2_id IS NULL AND s.status = 'waiting'
         AND s.search_expires_at > NOW()
         AND ${profileVisibleSql('s.user1_id','$1')}
         AND ${profileVisibleSql('$1','s.user1_id')}

@@ -1,19 +1,30 @@
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import Icon from '../components/Icon';
+import Brand from '../components/Brand';
+
 export default function Welcome() {
-  const navigate = useNavigate();
   return <main className="welcome-screen">
-    <header className="welcome-brand"><span className="brand-wordmark">aura<span className="brand-dot">.</span></span><span className="eyebrow">A deeper kind of dating</span></header>
-    <div className="welcome-story">
-      <div className="connection-art" aria-hidden="true"><div className="art-orbit orbit-one"/><div className="art-orbit orbit-two"/><span className="art-caption">The beginning of something real.</span><span className="art-star">+</span></div>
-      <p className="eyebrow">Personality first. Always.</p>
-      <h1>Some connections<br/>are <em>felt first.</em></h1>
-      <p className="welcome-description">A little mystery. An honest conversation.<br/>Meet the person before the profile picture.</p>
+    <header className="welcome-brand"><Brand /></header>
+    <div className="welcome-content">
+      <div className="welcome-story">
+        <h1>Start with a<br /><em>conversation.</em></h1>
+        <p className="welcome-description">Meet someone new over chat or voice. Reveal who you are when you’re both ready.</p>
+      </div>
+      <div className="welcome-actions">
+        <Link className="welcome-link welcome-link-primary" to="/signup">Create account <Icon name="arrow" size={18} /></Link>
+        <Link className="welcome-link welcome-link-secondary" to="/login">Sign in</Link>
+      </div>
     </div>
-    <div className="welcome-actions">
-      <button className="aura-btn-primary flex items-center justify-between" onClick={() => navigate('/signup')}>Find your connection <Icon name="arrow"/></button>
-      <p className="text-sm text-center text-gray-400 mt-5">Already here? <button className="text-white ml-1 underline underline-offset-4" onClick={() => navigate('/login')}>Sign in</button></p>
-      <p className="welcome-footnote"><Icon name="lock" size={12}/> Your identity, revealed on your terms.</p>
+    <div className="welcome-preview" aria-hidden="true">
+      <div className="welcome-chat">
+        <div className="welcome-chat-header">
+          <span className="welcome-chat-avatar"><Icon name="talk" size={19} /></span>
+          <div><strong>Anonymous chat</strong><span><Icon name="lock" size={12} /> Identity hidden</span></div>
+        </div>
+        <p className="welcome-message">What’s your perfect Sunday?</p>
+        <p className="welcome-message welcome-message-reply">Coffee, rain, and no plans.</p>
+        <p className="welcome-message welcome-message-last">Okay, we’d get along.</p>
+      </div>
     </div>
   </main>;
 }

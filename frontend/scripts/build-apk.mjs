@@ -7,7 +7,7 @@ const frontend=fileURLToPath(new URL('../',import.meta.url)),root=path.resolve(f
 const arg=process.argv.find(v=>v.startsWith('--api='))?.slice(6)||process.env.AURA_API_URL;
 if(!arg)throw new Error('Provide --api=https://your-server/api or --local-test --api=http://YOUR-PC-IP:5000/api');
 const api=new URL(arg);
-if(!['http:','https:'].includes(api.protocol)||api.username||api.password||api.search||api.hash||api.pathname.replace(/\/$/,'')!=='/api')throw new Error('Use a server URL ending in /api, without credentials, query or fragment.');
+if(!['http:','https:'].includes(api.protocol)||api.username||api.password||api.search||api.hash||!api.pathname.replace(/\/$/,'').endsWith('/api'))throw new Error('Use a server URL ending in /api, without credentials, query or fragment.');
 const local=/^(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)$/.test(api.hostname);
 if(api.protocol==='http:'&&(!local||!process.argv.includes('--local-test')))throw new Error('HTTP is permitted only with --local-test and a private LAN address. Use HTTPS for deployed servers.');
 const tools=path.join(root,'.android-tools');

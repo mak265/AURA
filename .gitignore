@@ -18,3 +18,5 @@ backend/.local-postgres/
 artifacts/
 *.apk
 *.aab
+**/google-services.json
+*.p8

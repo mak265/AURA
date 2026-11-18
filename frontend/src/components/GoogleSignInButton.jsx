@@ -34,14 +34,20 @@ function loadGoogleScript() {
   return state.scriptPromise;
 }
 
-export default function GoogleSignInButton({ policyConsent }) {
+export default function GoogleSignInButton(props) {
+  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim();
+  if (Capacitor.isNativePlatform() || !clientId || clientId.includes('your-google-client-id')) return null;
+
+  return <GoogleWebSignIn {...props} clientId={clientId} />;
+}
+
+function GoogleWebSignIn({ policyConsent, workStatus, clientId }) {
   const buttonRef = useRef(null);
   const [error, setError] = useState('');
   const navigate = useNavigate();
   const { googleLogin } = useAuth();
 
   useEffect(() => {
-    if (Capacitor.isNativePlatform()) return;
     let active = true;
     let submitting = false;
     const callback = async response => {
@@ -49,7 +55,7 @@ export default function GoogleSignInButton({ policyConsent }) {
       submitting = true;
       setError('');
       try {
-        const data = await googleLogin(response.credential, policyConsent);
+        const data = await googleLogin(response.credential, policyConsent, workStatus);
         if (active) navigate(['staff','admin','superadmin'].includes(data.user.management_role)?'/admin':data.user.hasAura ? '/discover' : '/onboarding');
       } catch (err) {
         if (active && err.response?.data?.code === 'POLICY_ACCEPTANCE_REQUIRED') { navigate('/signup'); return; }
@@ -62,8 +68,6 @@ export default function GoogleSignInButton({ policyConsent }) {
 
     const init = async () => {
       try {
-        const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-        if (!clientId || clientId.includes('your-google-client-id')) throw new Error('Google sign-in is not configured.');
         const google = await loadGoogleScript();
         if (!active || !buttonRef.current) return;
         if (!state.initialized) {
@@ -83,10 +87,10 @@ export default function GoogleSignInButton({ policyConsent }) {
       active = false;
       if (state.listener === callback) state.listener = null;
     };
-  }, [googleLogin, navigate, policyConsent]);
+  }, [clientId, googleLogin, navigate, policyConsent, workStatus]);
 
-  if (Capacitor.isNativePlatform()) return <p className="text-xs text-center text-gray-500">Use email and password in this test app. Native Google sign-in is not configured yet.</p>;
   return <div>
+    <div className="auth-provider-divider">or</div>
     <div ref={buttonRef} className="w-full" />
     {error && <p role="alert" className="text-red-400 text-xs text-center mt-2">{error}</p>}
   </div>;

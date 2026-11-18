@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_ready_title">AURA update ready</string>
+    <string name="update_ready_message">Restart AURA to finish installing the update.</string>
+    <string name="update_later">Later</string>
+    <string name="update_restart">Restart now</string>
+    <string name="update_restart_failed">Couldn’t finish the update. Reopen AURA to try again.</string>
+</resources>

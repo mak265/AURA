@@ -43,7 +43,7 @@
         ],
         [
           "Storage and choices",
-          "Account and shared content remain stored to provide the service until removed or a deletion request is handled, subject to report retention. Glimpses become unavailable after 24 hours; this does not guarantee immediate physical removal from storage or backups. Browser storage holds authentication tokens and device preferences. You can edit your profile, choose audiences and control active status. Request access, correction, deletion or review through Settings → Report a bug. Learn about privacy rights and complaints at privacy.gov.ph."
+          "You can delete your account from Settings → Account. Account deletion removes your profile and associated content from the live app. Copies already retained in other users’ safety reports follow the report retention period. Glimpses become unavailable after 24 hours. Expiration and account deletion do not guarantee immediate removal from backups. App storage holds authentication tokens and device preferences. You can edit your profile, choose audiences and control active status. Request access, correction or review through Settings → Report a bug. Learn about privacy rights and complaints at privacy.gov.ph."
         ],
         [
           "Development notice and contact",

@@ -46,6 +46,6 @@ export default function ProfilePhotoCropper({ image, saving, error, onCancel, on
       }}><canvas ref={canvas} width={512} height={512}/><div className="photo-crop-guide" aria-hidden="true"/></div>
     <div className="photo-crop-controls"><label htmlFor="photo-crop-zoom">Zoom <span>{Math.round(zoom * 100)}%</span></label><input id="photo-crop-zoom" type="range" min="1" max="4" step="0.05" value={zoom} disabled={saving} onChange={event => changeZoom(Number(event.target.value))}/><button disabled={saving} onClick={() => { setZoom(1); setPosition({ x:.5, y:.5 }); }}>Reset framing</button></div>
     {error && <p role="alert" className="text-sm text-red-600 px-5">{error}</p>}
-    <footer><button disabled={saving} onClick={onCancel} className="aura-btn-secondary !py-3 text-sm">Cancel</button><button disabled={saving} onClick={() => onSave(canvas.current.toDataURL('image/jpeg', .88))} className="aura-btn-primary !py-3 text-sm">{saving ? 'Saving…' : 'Save photo'}</button></footer>
+    <footer><button disabled={saving} onClick={onCancel} className="aura-btn-secondary !py-3 text-sm">Cancel</button><button disabled={saving} onClick={() => onSave(canvas.current)} className="aura-btn-primary !py-3 text-sm">{saving ? 'Saving…' : 'Save photo'}</button></footer>
   </dialog>, document.body);
 }

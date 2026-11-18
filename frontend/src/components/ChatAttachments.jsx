@@ -18,7 +18,7 @@ export default function ChatAttachments({ onSend }) {
       const image=await createImageBitmap(file),scale=Math.min(1,1600/Math.max(image.width,image.height)),canvas=document.createElement('canvas');
       canvas.width=Math.round(image.width*scale);canvas.height=Math.round(image.height*scale);
       const context=canvas.getContext('2d');context.fillStyle='#fff';context.fillRect(0,0,canvas.width,canvas.height);context.drawImage(image,0,0,canvas.width,canvas.height);image.close();
-      const media=canvas.toDataURL('image/jpeg',.87);if(alive.current)setDraft({kind:'image',media,url:media});
+      const media=canvas.toDataURL('image/jpeg',.87);if(alive.current)setDraft({kind:'image',media,url:media,id:crypto.randomUUID()});
     }catch{if(alive.current)setError('Unable to open that image.');}finally{if(alive.current)setBusy(false);if(fileInput.current)fileInput.current.value='';}
   };
   const startRecording=async()=>{
@@ -39,7 +39,7 @@ export default function ChatAttachments({ onSend }) {
         if(discard.current)return;
         const blob=new Blob(chunks,{type:instance.mimeType.split(';')[0]});
         if(!blob.size||blob.size>10*1024*1024){setError('Unable to prepare voice message. Please try again.');return;}
-        setDraft({kind:'audio',blob,url:URL.createObjectURL(blob),duration:Math.min(120,Math.max(.1,(Date.now()-started)/1000))});
+        setDraft({kind:'audio',blob,url:URL.createObjectURL(blob),id:crypto.randomUUID(),duration:Math.min(120,Math.max(.1,(Date.now()-started)/1000))});
       };
       instance.onerror=()=>{discard.current=true;input.getTracks().forEach(track=>track.stop());clearInterval(clock.current);clearTimeout(limit.current);if(alive.current){setRecording(false);setError('Recording interrupted. Please try again.');}};
       instance.start();setSeconds(0);setRecording(true);
@@ -52,14 +52,14 @@ export default function ChatAttachments({ onSend }) {
     if(!draft)return;setBusy(true);setError('');
     try{
       const media=draft.media || await toDataUrl(draft.blob);
-      await onSend({kind:draft.kind,media,duration:draft.duration});
+      await onSend({kind:draft.kind,media,duration:draft.duration,client_message_id:draft.id});
       if(alive.current)setDraft(null);
     }catch(err){if(alive.current)setError(err.response?.data?.error||'Unable to send attachment. Please try again.');}finally{if(alive.current)setBusy(false);}
   };
   return <div className="chat-attachments">
     <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" aria-label="Choose chat image" onChange={selectImage} disabled={busy||recording}/>
     {draft?<div className="attachment-draft">{draft.kind==='image'?<img src={draft.url} alt="Image message preview"/>:<audio controls src={draft.url} aria-label="Voice message preview"/>}<div className="flex gap-3 mt-3"><button disabled={busy} onClick={()=>{setDraft(null);setError('');}} className="aura-btn-secondary !py-2 text-xs">Discard</button><button disabled={busy} onClick={send} className="aura-btn-primary !py-2 text-xs">{busy?'Sending…':draft.kind==='image'?'Send image':'Send voice message'}</button></div></div>:recording?<div className="recording-controls"><span className="recording-dot"/><span>Recording {Math.floor(seconds/60)}:{String(seconds%60).padStart(2,'0')}</span><button onClick={()=>{discard.current=true;if(recorder.current?.state==='recording')recorder.current.stop();}}>Cancel</button><button onClick={()=>{if(recorder.current?.state==='recording')recorder.current.stop();}}>Stop & preview</button></div>:<div className="attachment-tools"><button type="button" disabled={busy} onClick={()=>setCamera(true)}>Camera</button><button type="button" disabled={busy} onClick={()=>fileInput.current.click()}><Icon name="photo" size={17}/>Photo</button><button type="button" disabled={busy} onClick={startRecording}><Icon name="mic" size={17}/>Voice message</button>{busy&&<span>Preparing…</span>}</div>}
-    {camera&&<ChatCamera onClose={()=>setCamera(false)} onCapture={media=>{setDraft({kind:'image',media,url:media});setCamera(false);}}/>}
+    {camera&&<ChatCamera onClose={()=>setCamera(false)} onCapture={media=>{setDraft({kind:'image',media,url:media,id:crypto.randomUUID()});setCamera(false);}}/>}
     {error&&<p role="alert" className="text-xs text-red-600 mt-2">{error}</p>}
   </div>;
 }

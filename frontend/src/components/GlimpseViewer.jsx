@@ -3,27 +3,47 @@ import ReactionIcon from './ReactionIcon';
 import { useEffect, useRef, useState } from 'react';
 import api from '../api/client';
 import GlimpseScreen from './GlimpseScreen';
-export default function GlimpseViewer({ ids, initialId, myId, onClose, onDeleted }) {
+export default function GlimpseViewer({ ids, initialId, myId, onClose, onDeleted, onViewed }) {
  const [active,setActive]=useState(initialId),[content,setContent]=useState(null),[error,setError]=useState(''),[progress,setProgress]=useState(0),[paused,setPaused]=useState(false),[confirm,setConfirm]=useState(false),[busy,setBusy]=useState(false),[loaded,setLoaded]=useState(false);
  const [activityOpen,setActivityOpen]=useState(false),[reactionBusy,setReactionBusy]=useState(false),[reactionError,setReactionError]=useState('');
+ const [replyOpen,setReplyOpen]=useState(false),[reply,setReply]=useState(''),[replyBusy,setReplyBusy]=useState(false),[replyStatus,setReplyStatus]=useState('');
  const down=useRef(null),index=ids.indexOf(active);
- const navigate=direction=>{const next=ids[index+direction];if(next)setActive(next);else if(direction>0)onClose();};
+ const navigate=direction=>{if(replyOpen)return;setReply('');setReplyStatus('');const next=ids[index+direction];if(next)setActive(next);else if(direction>0)onClose();};
  useEffect(()=>{let live=true;setContent(null);setError('');setProgress(0);setConfirm(false);setLoaded(false);setActivityOpen(false);setReactionError('');api.get(`/glimpses/${active}`).then(({data})=>{if(live){setContent(data);setLoaded(!data.image_url);}}).catch(err=>{if(live)setError(err.response?.data?.error||'Unable to open glimpse.');});return()=>{live=false;};},[active]);
  useEffect(()=>{if(!content)return;const timer=setTimeout(()=>{setContent(null);setError('This glimpse has expired.');},Math.max(0,new Date(content.expires_at)-Date.now()));return()=>clearTimeout(timer);},[content]);
- useEffect(()=>{if(!loaded||paused||confirm||activityOpen||!content||error)return;let last=performance.now();const timer=setInterval(()=>{const now=performance.now(),elapsed=now-last;last=now;setProgress(value=>Math.min(1,value+elapsed/7000));},50);return()=>clearInterval(timer);},[loaded,paused,confirm,activityOpen,content,error]);
+ useEffect(()=>{if(!loaded||paused||confirm||activityOpen||replyOpen||!content||error)return;let last=performance.now();const timer=setInterval(()=>{const now=performance.now(),elapsed=now-last;last=now;setProgress(value=>Math.min(1,value+elapsed/7000));},50);return()=>clearInterval(timer);},[loaded,paused,confirm,activityOpen,replyOpen,content,error]);
  useEffect(()=>{if(progress>=1)navigate(1);},[progress]);
- useEffect(()=>{const key=event=>{if(confirm||activityOpen)return;if(event.key==='ArrowRight')navigate(1);if(event.key==='ArrowLeft')navigate(-1);if(event.key===' '){event.preventDefault();setPaused(value=>!value);}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);});
+ useEffect(()=>{const key=event=>{if(confirm||activityOpen||replyOpen)return;if(event.key==='ArrowRight')navigate(1);if(event.key==='ArrowLeft')navigate(-1);if(event.key===' '){event.preventDefault();setPaused(value=>!value);}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);});
  useEffect(()=>{const visibility=()=>setPaused(document.hidden);document.addEventListener('visibilitychange',visibility);return()=>document.removeEventListener('visibilitychange',visibility);},[]);
  useEffect(()=>{
-  if(!loaded||!content||content.user_id===myId)return;
-  const record=()=>{if(!document.hidden)api.post('/glimpses/'+active+'/view').catch(()=>{});};record();document.addEventListener('visibilitychange',record);return()=>document.removeEventListener('visibilitychange',record);
- },[loaded,content?.id,myId,active]);
+  if(!loaded||content?.id!==active||content.user_id===myId)return;
+  let sent=false;
+  const record=()=>{
+   if(document.hidden||sent)return;
+   sent=true;
+   api.post('/glimpses/'+active+'/view').then(()=>onViewed(active)).catch(()=>{sent=false;});
+  };
+  record();
+  document.addEventListener('visibilitychange',record);
+  return()=>document.removeEventListener('visibilitychange',record);
+ },[loaded,content?.id,content?.user_id,myId,active,onViewed]);
  const react=async reaction=>{if(reactionBusy)return;setReactionBusy(true);setReactionError('');try{const {data}=await api.post('/glimpses/'+active+'/reaction',{reaction});setContent(previous=>({...previous,my_reaction:data.reaction}));}catch(err){setReactionError(err.response?.data?.error||'Unable to react.');}finally{setReactionBusy(false);}};
  const remove=async()=>{setBusy(true);try{await api.delete(`/glimpses/${active}`);onDeleted();onClose();}catch{setError('Unable to delete glimpse.');setConfirm(false);}finally{setBusy(false);}};
+ const sendReply=async event=>{
+  event.preventDefault();if(replyBusy||!reply.trim()||content?.id!==active)return;
+  setReplyBusy(true);setReplyStatus('');
+  try{await api.post(`/glimpses/${active}/reply`,{body:reply});setReply('');setReplyOpen(false);setReplyStatus('Reply sent.');}
+  catch(err){setReplyStatus(err.response?.data?.error||'Unable to send your reply.');}
+  finally{setReplyBusy(false);}
+ };
  return <GlimpseScreen label="View glimpse" className="glimpse-full-viewer" onClose={onClose}><div className="glimpse-view-stage"><div className="glimpse-view-top"><div className="glimpse-live-progress">{ids.map((id,i)=><span key={id}><i style={{width:`${i<index?100:i===index?progress*100:0}%`}}/></span>)}</div><header><div><h2>{content?.aura_name||'Glimpse'}</h2>{content&&<small>{content.visibility==='public'?'Public':'Connections'} · {new Date(content.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</small>}</div><button onClick={()=>setPaused(value=>!value)} aria-label={paused?'Play glimpse':'Pause glimpse'}>{paused?'▶':'Ⅱ'}</button><button onClick={onClose} aria-label="Close glimpse">×</button></header></div>
  <div className="glimpse-view-art" onPointerDown={event=>{down.current={x:event.clientX,time:Date.now()};setPaused(true);}} onPointerUp={event=>{const start=down.current;down.current=null;setPaused(false);if(!start||Date.now()-start.time>300)return;const rect=event.currentTarget.getBoundingClientRect();navigate(event.clientX-rect.left<rect.width*.35?-1:1);}} onPointerCancel={()=>{down.current=null;setPaused(false);}}>
  {error?<p role="alert">{error}</p>:!content?<p>Loading glimpse…</p>:<>{content.image_url&&<img src={content.image_url} alt="Glimpse" draggable={false} onLoad={()=>setLoaded(true)} onError={()=>setError('Unable to load this glimpse.')}/>} {content.caption&&<p className={content.image_url?'legacy-glimpse-caption':''}>{content.caption}</p>}</>}
- </div><footer className="glimpse-view-bottom"><button disabled={index<=0} aria-label="Previous glimpse" onClick={()=>navigate(-1)}>←</button><span>{index+1} / {ids.length} · Hold to pause</span>{content?.user_id===myId&&<GlimpseActivity key={active} glimpseId={active} onOpenChange={setActivityOpen}/>}{content?.user_id===myId&&<button onClick={()=>setConfirm(true)}>Delete</button>}<button aria-label="Next glimpse" onClick={()=>navigate(1)}>→</button></footer>{content&&content.user_id!==myId&&loaded&&!error&&<div className="glimpse-quick-reactions" aria-label="React to glimpse">{['like','love','care','haha','wow','sad','angry'].map(type=><button key={type} disabled={reactionBusy} aria-label={`React ${type}`} aria-pressed={content.my_reaction===type} onClick={()=>react(type)}><ReactionIcon type={type} size={32}/></button>)}{reactionError&&<p role="alert">{reactionError}</p>}</div>}</div>
+ </div><footer className="glimpse-view-bottom"><button disabled={index<=0||replyOpen} aria-label="Previous glimpse" onClick={()=>navigate(-1)}>←</button><span>{index+1} / {ids.length} · Hold to pause</span>{content?.user_id===myId&&<GlimpseActivity key={active} glimpseId={active} onOpenChange={setActivityOpen}/>}{content?.user_id===myId&&<button onClick={()=>setConfirm(true)}>Delete</button>}<button disabled={replyOpen} aria-label="Next glimpse" onClick={()=>navigate(1)}>→</button></footer>{content&&content.user_id!==myId&&loaded&&!error&&<div className="glimpse-quick-reactions" aria-label="React to glimpse">{['like','love','care','haha','wow','sad','angry'].map(type=><button key={type} disabled={reactionBusy||replyOpen} aria-label={`React ${type}`} aria-pressed={content.my_reaction===type} onClick={()=>react(type)}><ReactionIcon type={type} size={32}/></button>)}{reactionError&&<p role="alert">{reactionError}</p>}</div>}
+ {content&&content.user_id!==myId&&loaded&&!error&&<div className="glimpse-reply-box">{replyOpen?<form onSubmit={sendReply}>
+   <label>Private reply<textarea autoFocus rows={2} maxLength={300} value={reply} onChange={e=>setReply(e.target.value)} className="aura-input" /></label>
+   <div><button type="button" onClick={()=>{setReplyOpen(false);setReplyStatus('');}} disabled={replyBusy}>Cancel</button><button type="submit" disabled={replyBusy||!reply.trim()}>{replyBusy?'Sending…':'Send reply'}</button></div>
+ </form>:<button onClick={()=>{setReplyOpen(true);setReplyStatus('');}}>Reply privately</button>}{replyStatus&&<p role="status">{replyStatus}</p>}</div>}</div>
  {confirm&&<div className="glimpse-discard"><div role="alertdialog" aria-label="Delete glimpse"><h2>Delete this glimpse?</h2><p>It will be permanently removed.</p><button autoFocus disabled={busy} onClick={()=>setConfirm(false)}>Keep glimpse</button><button disabled={busy} onClick={remove}>{busy?'Deleting…':'Delete'}</button></div></div>}
  </GlimpseScreen>;
 }

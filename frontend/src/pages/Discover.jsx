@@ -1,11 +1,16 @@
-import ReportButton from '../components/ReportButton';
+import DiscoverAuras from '../components/DiscoverAuras';
+import DiscoverAuraComposer from '../components/DiscoverAuraComposer';
+import {useAuth} from '../context/AuthContext';
+import {useNavigate, useSearchParams} from 'react-router-dom';
 import ContentSkeleton from '../components/ContentSkeleton';
 import Icon from '../components/Icon';
+import { ProfileSilhouette } from '../components/Avatar';
+import AppTopBar from '../components/AppTopBar';
 import { ConnectionDetails } from '../components/ConnectionProfile';
-import { INTENTIONS } from '../connectionOptions';
+import { INTENTIONS, PROMPTS } from '../connectionOptions';
 import { useState, useEffect, useRef } from 'react';
 import api from '../api/client';
-import BottomNav from '../components/BottomNav';
+import './discover.css';
 
 const GENDERS = ['Male', 'Female', 'Nonbinary'];
 
@@ -32,7 +37,79 @@ const INTERESTS_LIST = [
   { id: 12, name: 'Dancing', emoji: '💃' },
 ];
 
+function firstPrompt(answers) {
+  const index = PROMPTS.findIndex((_, i) => typeof answers?.[i] === 'string' && answers[i].trim());
+  return index === -1 ? null : { index, question: PROMPTS[index], answer: answers[index] };
+}
+
+function InterestTags({ interests }) {
+  return <ul className="discover-interest-tags">
+    {interests.map(({ name, emoji }) => <li key={name}>{emoji && <span aria-hidden="true">{emoji}</span>}{name}</li>)}
+  </ul>;
+}
+
+function DiscoverCard({ card, onPass, onSend }) {
+  const prompt = firstPrompt(card.prompt_answers);
+  const additionalAnswers = PROMPTS.map((_, i) => i === prompt?.index ? '' : card.prompt_answers?.[i]);
+  const shared = card.shared_interests || [];
+  const otherInterests = (card.interests || []).filter(interest => !shared.some(common => common.name === interest.name));
+
+  return <article className="aura-card discover-person-card overflow-hidden">
+    <header className="discover-person-cover" style={{ '--identity-color': card.aura_color || '#855ac5' }}>
+      <ProfileSilhouette gender={card.gender} className="discover-person-silhouette"/>
+      <div className="discover-person-name">
+        <h2>{card.aura_name}</h2>
+        {card.username && <p>@{card.username}</p>}
+        <p>{[card.age, card.gender, card.city].filter(Boolean).join(' · ')}</p>
+      </div>
+      <span className="discover-person-private"><Icon name="lock" size={12}/> Identity hidden</span>
+    </header>
+    <div className="discover-person-content">
+      {prompt ? <div className="discover-prompt">
+        <p>{prompt.question}</p>
+        <blockquote>{prompt.answer}</blockquote>
+      </div> : card.bio && <p className="discover-person-bio">{card.bio}</p>}
+      {card.dating_intention && <div className="discover-person-intention">
+        <span>Dating intention</span>
+        <strong>{card.dating_intention}</strong>
+      </div>}
+      {shared.length > 0 && <div className="discover-person-shared">
+        <h3>Shared interests</h3>
+        <InterestTags interests={shared} />
+      </div>}
+      <details className="discover-person-details" onToggle={event => {
+        if (event.currentTarget.open) api.post(`/discover/${card.id}/view`).catch(() => {});
+      }}>
+        <summary>View Aura profile</summary>
+        {additionalAnswers.some(Boolean) && <ConnectionDetails answers={additionalAnswers} />}
+        {prompt && card.bio && <p className="discover-person-bio">{card.bio}</p>}
+        {otherInterests.length > 0 && <div className="discover-person-shared">
+          <h3>{shared.length ? 'Other interests' : 'Interests'}</h3>
+          <InterestTags interests={otherInterests} />
+        </div>}
+        {Number.isFinite(card.compatibility) && <p className="discover-person-reasons">{card.compatibility}% estimated compatibility</p>}
+        <p className="discover-person-reasons">Premium members can see that you opened their profile.</p>
+      </details>
+      <div className="discover-card-actions">
+        <button className="aura-btn-secondary" onClick={() => onPass(card.id)}>Pass for now</button>
+        <button className="aura-btn-primary" onClick={() => onSend({ card, prompt })}>Send Aura</button>
+      </div>
+    </div>
+  </article>;
+}
+
 export default function Discover() {
+  const {auraInboxCount=0}=useAuth();
+  const navigate=useNavigate();
+  const [query, setQuery] = useSearchParams();
+  const idFromQuery = Number(query.get('aura'));
+  const receivedAura = Number.isSafeInteger(idFromQuery) && idFromQuery > 0 ? idFromQuery : null;
+  const [selectedTab,setSelectedTab]=useState('explore'),[notice,setNotice]=useState(null),[recipient,setRecipient]=useState(null);
+  const auraTab = receivedAura ? 'received' : selectedTab;
+  const setAuraTab = value => {
+    setSelectedTab(value);
+    if (receivedAura) setQuery(previous => { const next = new URLSearchParams(previous); next.delete('aura'); return next; }, { replace: true });
+  };
   const [search,setSearch]=useState('');
   const [appliedFilters,setAppliedFilters]=useState(null);
   const requestId=useRef(0);
@@ -109,22 +186,20 @@ export default function Discover() {
     (filters.age_max ? 1 : 0) +
     (filters.interests.length > 0 ? 1 : 0);
 
-  const sendAura = async (userId) => {
-    try {
-      await api.post(`/discover/${userId}/send-aura`);
-      setCards(prev => prev.filter(c => c.id !== userId));
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to send aura.');
-    }
+  const sendAura = async opener => {
+    const userId = recipient.card.id;
+    const { data } = await api.post(`/discover/${userId}/send-aura`, opener ? { opener } : {});
+    setNotice(data);
+    window.dispatchEvent(new Event('aura:inbox-change'));
+    setCards(previous => previous.filter(card => card.id !== userId));
   };
 
   return (
-    <div className="min-h-screen bg-aura-deep pb-24">
-      <div className="page-heading flex justify-between items-center">
-        <div><p className="eyebrow">Room for something real</p><h1>Discover</h1><p className="text-sm text-gray-400 mt-2">A personality worth getting to know.</p></div>
-        <button
+    <div className="mobile-tab-screen discover-screen min-h-screen bg-aura-deep pb-24">
+      <AppTopBar title="Discover">
+        {auraTab==='explore'&&<button
           aria-label="Filter people" aria-expanded={showFilters} onClick={() => setShowFilters(s => !s)}
-          className="w-9 h-9 rounded-xl bg-aura-card border border-aura-border flex items-center justify-center text-aura-violet-light relative"
+          className="mobile-icon-action"
         >
           <Icon name="filters"/>
           {activeFilterCount > 0 && (
@@ -132,10 +207,14 @@ export default function Discover() {
               {activeFilterCount}
             </span>
           )}
-        </button>
-      </div>
+        </button>}
+      </AppTopBar>
 
-      <div className="discover-search-wrap"><div className="discover-search"><Icon name="discover" size={19}/><input type="search" aria-label="Search by Aura name" placeholder="Search by Aura name…" maxLength={80} value={search} onChange={event=>setSearch(event.target.value)}/>{search&&<button aria-label="Clear search" onClick={()=>setSearch('')}>×</button>}</div><p>Find an Aura. A little mystery stays.</p></div>
+      <nav className="discover-aura-tabs" aria-label="Discover sections">{[['explore','Explore'],['received','Received Auras'],['sent','Sent Auras']].map(([value,label])=><button key={value} aria-pressed={auraTab===value} className={auraTab===value?'active':''} onClick={()=>{setAuraTab(value);setShowFilters(false);setNotice(null);}}>{label}{value==='received'&&auraInboxCount>0&&<span>{auraInboxCount}</span>}</button>)}</nav>
+      {notice&&<div className="discover-aura-notice" role="status"><Icon name="heart" size={20}/><div><strong>{notice.matched?'Your Auras matched!':'Aura sent'}</strong><p>{notice.matched?'You can start your first conversation together.':'They can see your interest in Discover → Received Auras.'}</p><button onClick={()=>notice.matched?navigate(notice.canChat ? '/chat/'+notice.matchId : '/matches'):setAuraTab('sent')}>{notice.matched?'Open connection':'View sent Auras'} →</button></div></div>}
+      {auraTab==='explore'&&auraInboxCount>0&&<button className="discover-incoming-banner" onClick={()=>setAuraTab('received')}><Icon name="heart" size={19}/><span><strong>{auraInboxCount} {auraInboxCount===1?'person sent':'people sent'} you an Aura</strong><small>See who’s interested in you</small></span><Icon name="arrow" size={17}/></button>}
+      {auraTab!=='explore'?<DiscoverAuras key={auraTab} direction={auraTab} targetId={receivedAura}/>:<>
+      <div className="discover-search-wrap"><div className="discover-search"><Icon name="discover" size={19}/><input type="search" aria-label="Search by Aura name or username" placeholder="Aura name or @username" maxLength={80} value={search} onChange={event=>setSearch(event.target.value)}/>{search&&<button aria-label="Clear search" onClick={()=>setSearch('')}>×</button>}</div><p>Find an Aura. A little mystery stays.</p></div>
       {/* Filter Panel */}
       {showFilters && (
         <div className="px-5 pb-4">
@@ -251,43 +330,14 @@ export default function Discover() {
         </div>
       ) : (
         <div className="px-4 space-y-4">
-          {cards.map(card => (
-            <div key={card.id} className="aura-card overflow-hidden">
-              <div className="identity-cover" style={{ '--identity-color': card.aura_color || 'linear-gradient(135deg,#897294,#b38d98)' }}>
-                <div className="identity-orbit" aria-hidden="true"/><div className="identity-initial" aria-hidden="true">{card.aura_name?.charAt(0)}</div>
-                <span className="identity-label"><Icon name="lock" size={12}/> A little mystery, for now</span>
-              </div>
-              <div className="p-4">
-                <div className="flex items-center justify-between gap-3"><div className="text-xl font-extrabold">{card.aura_name}</div><ReportButton userId={card.id} compact/></div>
-                <div className="text-xs text-gray-400 mt-0.5">
-                  {[card.age, card.gender, card.city].filter(Boolean).join(' · ')}
-                </div>
-                <ConnectionDetails intention={card.dating_intention} answers={card.prompt_answers} />
-                <div className="text-sm mt-2.5">"{card.bio}"</div>
-                <div className="flex gap-1.5 mt-3 flex-wrap">
-                  {card.interests?.map((i, idx) => (
-                    <span key={idx} className="text-[11px] px-2.5 py-1 rounded-full bg-aura-elevated text-aura-violet-light">
-                      {i.name}
-                    </span>
-                  ))}
-                </div>
-                <div className="compatibility-note"><Icon name="heart" size={15}/><div><span>Compatibility · {card.compatibility}%</span><p>{card.reasons?.filter(reason => reason !== 'Within preferred distance').join(' · ')}</p></div></div>
-                <div className="flex gap-2.5 mt-4">
-                  <button onClick={() => setCards(previous => previous.filter(person => person.id !== card.id))} className="flex-1 py-3 rounded-xl bg-aura-elevated text-gray-300 text-sm font-medium">Pass for now</button>
-                  <button
-                    onClick={() => sendAura(card.id)}
-                    className="aura-btn-primary flex-1 !w-auto !py-3 text-sm"
-                  >
-                    Send interest
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
+          {cards.map(card => <DiscoverCard key={card.id} card={card} onSend={setRecipient}
+            onPass={id => setCards(previous => previous.filter(person => person.id !== id))} />)}
         </div>
       )}
 
-      <BottomNav />
+      </>}
+      {recipient && <DiscoverAuraComposer name={recipient.card.aura_name} prompt={recipient.prompt}
+        onSend={sendAura} onClose={() => setRecipient(null)} />}
     </div>
   );
 }

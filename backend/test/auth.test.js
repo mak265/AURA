@@ -2,6 +2,7 @@ const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
 const db = require('../src/db');
 process.env.JWT_SECRET = 'local-auth-test-secret';
@@ -11,6 +12,9 @@ let newAccount = false, insertValues;
 const user = { id: 1, email: 'test@example.com', password_hash: bcrypt.hashSync('valid-password', 4) };
 db.query = async (sql, values) => {
   if (unavailable) throw Object.assign(new Error('Connection refused'), { code: 'ECONNREFUSED' });
+  if (sql.includes('INSERT INTO auth_attempt_limits')) {
+    return { rows: values[0].map(bucket => ({ bucket, attempts: 1, retry_after: 900 })) };
+  }
   if (sql.includes('INSERT INTO users')) { insertValues = values; return {rows:[user]}; }
   if (newAccount && sql.includes('FROM users')) return {rows:[]};
   return { rows: sql.includes('FROM users') ? [user] : [{ aura_name: 'Moon' }] };
@@ -32,14 +36,18 @@ async function post(path, body) {
 }
 after(() => new Promise(resolve => server.close(resolve)));
 test('password login accepts a valid password and rejects an incorrect one', async () => {
-  assert.equal((await post('/login', { email: user.email, password: 'valid-password' })).status, 200);
+  const result = await post('/login', { email: user.email, password: 'valid-password' });
+  assert.equal(result.status, 200);
+  assert.equal(jwt.verify(result.body.token, process.env.JWT_SECRET, {
+    clockTimestamp: Math.floor(Date.now() / 1000) + 8 * 86400
+  }).userId, user.id);
   assert.equal((await post('/login', { email: user.email, password: 'incorrect' })).status, 401);
 });
 test('Google login completes after token verification; invalid tokens are rejected', async () => {
   const result = await post('/google', { tokenId: 'verified-test-token' });
   assert.equal(result.status, 200);
   assert.equal(result.body.user.hasAura, true);
-  assert.ok(result.body.token);
+  assert.equal(jwt.verify(result.body.token, process.env.JWT_SECRET).exp, undefined);
   assert.equal((await post('/google', { tokenId: 'invalid' })).status, 401);
 });
 test('both login methods report database outages as temporary unavailability', async () => {
@@ -68,7 +76,9 @@ test('email signup requires complete current policy consent and stores the accep
    assert.equal((await post('/signup',{...body,policyConsent})).status,428);
    assert.equal(insertValues,undefined);
   }
-  assert.equal((await post('/signup',{...body,policyConsent:consent})).status,201);
+  const result = await post('/signup',{...body,policyConsent:consent});
+  assert.equal(result.status,201);
+  assert.equal(jwt.verify(result.body.token, process.env.JWT_SECRET).exp, undefined);
   assert.equal(insertValues[2],consent.version);
  }finally{newAccount=false;}
 });

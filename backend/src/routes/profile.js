@@ -2,12 +2,47 @@ const {enforceText}=require('../textModeration');
 const {enforceImage}=require('../imageModeration');
 const { presenceHeartbeat } = require('../presence');
 const { validateConnectionProfile, saveConnectionProfile } = require('../connectionProfile');
+const { postIdentityFields } = require('../postIdentity');
 const express = require('express');
 const db = require('../db');
 const { authenticate } = require('../middleware/auth');
+const { listProfileViews, countProfileViewers } = require('../profileViews');
+const { isWorkStatus } = require('../workStatus');
 
 const router = express.Router();
+router.get('/views', authenticate, listProfileViews);
+router.use('/management-notices', require('../managementNotices').router);
+router.delete('/account', authenticate, require('../accountDeletion').deleteOwnAccount);
+router.post('/redeem-code', require('./premiumCodes').redeemCode);
 router.post('/presence',authenticate,presenceHeartbeat);
+router.put('/username', authenticate, async (req, res) => {
+  const username = typeof req.body.username === 'string' ? req.body.username.trim().toLowerCase().replace(/^@/, '') : '';
+  if (!/^[a-z0-9_]{3,24}$/.test(username) || /^aura_\d+$/.test(username)) {
+    return res.status(400).json({ error: 'Choose 3–24 letters, numbers, or underscores. Auto-assigned usernames are reserved.' });
+  }
+  try {
+    if (!await enforceText(req, res, username)) return;
+    await db.query('UPDATE users SET username=$1, updated_at=NOW() WHERE id=$2', [username, req.user.userId]);
+    res.json({ username });
+  } catch (error) {
+    if (error.code === '23505') return res.status(409).json({ error: 'That username is already taken.' });
+    console.error('Username update failed:', error.code || error.name);
+    res.status(500).json({ error: 'Couldn’t save your username. Try again.' });
+  }
+});
+router.put('/work-status', authenticate, async (req, res) => {
+  const { workStatus } = req.body;
+  if (workStatus !== null && !isWorkStatus(workStatus)) {
+    return res.status(400).json({ error: 'Choose Student, Working individual, or Not specified.' });
+  }
+  try {
+    await db.query('UPDATE users SET work_status=$1, updated_at=NOW() WHERE id=$2', [workStatus, req.user.userId]);
+    res.json({ workStatus });
+  } catch (error) {
+    console.error('Work status update failed:', error.code || error.name);
+    res.status(500).json({ error: 'Couldn’t save your status. Try again.' });
+  }
+});
 router.get('/warnings',authenticate,async(req,res)=>{try{const result=await db.query('SELECT id,reason,created_at FROM account_warnings WHERE user_id=$1 AND acknowledged_at IS NULL ORDER BY created_at DESC LIMIT 10',[req.user.userId]);res.json(result.rows);}catch{res.status(500).json({error:'Unable to load account notices.'});}});
 router.post('/warnings/:id/acknowledge',authenticate,async(req,res)=>{try{await db.query('UPDATE account_warnings SET acknowledged_at=COALESCE(acknowledged_at,NOW()) WHERE id=$1 AND user_id=$2',[Number(req.params.id),req.user.userId]);res.json({ok:true});}catch{res.status(500).json({error:'Unable to acknowledge notice.'});}});
 
@@ -17,7 +52,7 @@ router.get('/', authenticate, async (req, res) => {
     const userId = req.user.userId;
 
     const userResult = await db.query(
-      'SELECT id, email, real_name, age, gender, religion, city, settings, profile_photo FROM users WHERE id = $1',
+      'SELECT id, email, real_name, age, gender, religion, city, settings, profile_photo, premium_until, work_status, username FROM users WHERE id = $1',
       [userId]
     );
     if (userResult.rows.length === 0) {
@@ -26,7 +61,7 @@ router.get('/', authenticate, async (req, res) => {
 
     const auraResult = await db.query('SELECT * FROM auras WHERE user_id = $1', [userId]);
     const interestsResult = await db.query(
-      `SELECT i.name, i.emoji FROM interests i
+      `SELECT i.id, i.name, i.emoji FROM interests i
        JOIN user_interests ui ON ui.interest_id = i.id
        WHERE ui.user_id = $1`,
       [userId]
@@ -46,11 +81,14 @@ router.get('/', authenticate, async (req, res) => {
       [userId]
     );
 
+    const profileViewers = await countProfileViewers(userId);
+    res.set('Cache-Control', 'no-store');
     res.json({
       user: userResult.rows[0],
       aura: auraResult.rows[0] || null,
       interests: interestsResult.rows,
       stats: {
+        profileViewers,
         matches: parseInt(matchesCount.rows[0].count),
         revealed: parseInt(revealedCount.rows[0].count),
         aurasSent: parseInt(aurasSentCount.rows[0].count),
@@ -65,10 +103,12 @@ router.get('/', authenticate, async (req, res) => {
 // Only return posts belonging to the authenticated profile owner.
 router.get('/posts', authenticate, async (req, res) => {
   try {
-    const result = await db.query(`SELECT p.id,p.image_url,p.caption,p.created_at,p.visibility,
+    const result = await db.query(`SELECT p.id,p.user_id,p.image_url,p.caption,p.created_at,p.edited_at,p.visibility,${postIdentityFields},
+      EXISTS (SELECT 1 FROM post_bookmarks WHERE user_id=$1 AND post_id=p.id) AS saved_by_me,
       (SELECT count(*)::int FROM post_likes WHERE post_id=p.id) AS like_count,
       (SELECT count(*)::int FROM post_comments WHERE post_id=p.id) AS comment_count
-      FROM posts p WHERE p.user_id=$1 AND p.moderation_hidden_at IS NULL ORDER BY p.created_at DESC,p.id DESC LIMIT 50`, [req.user.userId]);
+      FROM posts p JOIN users u ON u.id=p.user_id LEFT JOIN auras a ON a.user_id=p.user_id
+      WHERE p.user_id=$1 AND p.moderation_hidden_at IS NULL ORDER BY p.created_at DESC,p.id DESC LIMIT 50`, [req.user.userId]);
     res.json(result.rows);
   } catch (error) {
     console.error('Profile posts error:',error);
@@ -99,6 +139,9 @@ router.put('/', authenticate, async (req, res) => {
     if (error) return res.status(400).json({ error });
     const userId = req.user.userId;
     const { aura_name, aura_color, vibe, bio, emoji, age, gender, religion, city, real_name, interests } = req.body;
+    if (age != null && age !== '' && (!Number.isInteger(Number(age)) || Number(age) < 18 || Number(age) > 120)) {
+      return res.status(400).json({ error: 'Enter an age from 18 to 120.' });
+    }
 
     if(!await enforceText(req,res,[aura_name,bio,vibe,...(req.body.prompt_answers||[])].join(' ')))return;
     if (aura_name) {
@@ -119,11 +162,14 @@ router.put('/', authenticate, async (req, res) => {
     }
 
     await db.query(
-      `UPDATE users SET age = COALESCE($1, age), gender = COALESCE($2, gender),
-       religion = COALESCE($3, religion), city = COALESCE($4, city),
-       real_name = COALESCE($5, real_name), updated_at = NOW()
+      `UPDATE users SET age = CASE WHEN $7 THEN $1 ELSE age END,
+       gender = CASE WHEN $8 THEN $2 ELSE gender END,
+       religion = CASE WHEN $9 THEN $3 ELSE religion END,
+       city = CASE WHEN $10 THEN $4 ELSE city END,
+       real_name = CASE WHEN $11 THEN $5 ELSE real_name END, updated_at = NOW()
        WHERE id = $6`,
-      [age || null, gender || null, religion || null, city || null, real_name || null, userId]
+      [age || null, gender || null, religion || null, city || null, real_name || null, userId,
+        ...['age', 'gender', 'religion', 'city', 'real_name'].map(key => Object.hasOwn(req.body, key))]
     );
 
     if (Array.isArray(interests)) {
@@ -154,10 +200,14 @@ router.put('/settings', authenticate, async (req, res) => {
       return res.status(400).json({error:'Provide valid privacy settings.'});
     }
 
-    await db.query(
-      `UPDATE users SET settings = COALESCE(settings, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE id = $2`,
-      [JSON.stringify(settings), userId]
+    const updated = await db.query(
+      `UPDATE users SET settings = COALESCE(settings, '{}'::jsonb) || $1::jsonb, updated_at = NOW()
+       WHERE id = $2 AND (NOT $3::boolean OR premium_until > NOW())`,
+      [JSON.stringify(settings), userId, settings.private_dating === true]
     );
+    if (!updated.rowCount && settings.private_dating === true) {
+      return res.status(403).json({ code: 'PREMIUM_REQUIRED', error: 'Active Premium is required to turn on Private dating mode.' });
+    }
 
     res.json({ message: 'Settings updated successfully.' });
   } catch (err) {

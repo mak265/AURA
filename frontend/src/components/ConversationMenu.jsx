@@ -2,18 +2,18 @@ import ReportButton from './ReportButton';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Icon from './Icon';
-export function ConversationPressable({ onOpen, onMenu, children }) {
+export function ConversationPressable({ onOpen, onMenu, onPreview, children }) {
   const timer=useRef(null),held=useRef(false),start=useRef(null);
   const clear=()=>{clearTimeout(timer.current);timer.current=null;};
   useEffect(()=>()=>clearTimeout(timer.current),[]);
   return <div role="button" tabIndex={0} className="conversation-row" style={{touchAction:'pan-y',WebkitTouchCallout:'none',userSelect:'none'}}
-    onPointerDown={event=>{if(event.button!==0)return;held.current=false;start.current={x:event.clientX,y:event.clientY};timer.current=setTimeout(()=>{held.current=true;onMenu();},450);}}
+    onPointerDown={event=>{held.current=false;if(event.button!==0)return;start.current={x:event.clientX,y:event.clientY};timer.current=setTimeout(()=>{held.current=true;onPreview();},450);}}
     onPointerMove={event=>{if(start.current&&Math.hypot(event.clientX-start.current.x,event.clientY-start.current.y)>12)clear();}}
     onPointerUp={()=>{const pending=!!timer.current;clear();if(pending&&!held.current)onOpen();}}
-    onPointerCancel={clear} onPointerLeave={clear} onContextMenu={event=>{event.preventDefault();clear();held.current=true;onMenu();}}
+    onPointerCancel={clear} onPointerLeave={clear} onContextMenu={event=>{event.preventDefault();clear();if(!held.current)onPreview();held.current=true;}}
     onClick={event=>{if(event.detail===0&&!held.current)onOpen();}}
-    onKeyDown={event=>{if(event.key==='ContextMenu'||(event.shiftKey&&event.key==='F10')){event.preventDefault();onMenu();}else if(event.key==='Enter'||event.key===' '){event.preventDefault();onOpen();}}}>
-    {children}<button aria-label="Conversation options" className="conversation-options" onPointerDown={event=>event.stopPropagation()} onPointerUp={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();onMenu();}}>···</button>
+    onKeyDown={event=>{if(event.target!==event.currentTarget)return;if(event.key==='ContextMenu'||(event.shiftKey&&event.key==='F10')){event.preventDefault();onPreview();}else if(event.key==='Enter'||event.key===' '){event.preventDefault();onOpen();}}}>
+    {children}<button aria-label="Conversation options" className="conversation-options" onPointerDown={event=>event.stopPropagation()} onPointerUp={event=>event.stopPropagation()} onContextMenu={event=>{event.preventDefault();event.stopPropagation();}} onClick={event=>{event.stopPropagation();onMenu();}}>···</button>
   </div>;
 }
 export default function ConversationMenu({ conversation, onClose, onAction }) {

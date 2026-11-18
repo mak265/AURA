@@ -6,6 +6,7 @@ const { startSearch, heartbeat } = require('../soulTalkQueue');
 const express = require('express');
 const db = require('../db');
 const { authenticate } = require('../middleware/auth');
+const { createHmac } = require('node:crypto');
 
 const router = express.Router();
 
@@ -13,10 +14,20 @@ router.get('/allowance', authenticate, async(req,res)=>{
   try { res.set('Cache-Control','no-store').json(await allowance(db,req.user.userId)); }
   catch { res.status(503).json({error:'Unable to load your Aura Farming allowance.'}); }
 });
-router.get('/call-config', authenticate, (_req,res)=>{
+router.get('/call-config', authenticate, (req,res)=>{
   try {
     const iceServers=process.env.WEBRTC_ICE_SERVERS ? JSON.parse(process.env.WEBRTC_ICE_SERVERS) : [{urls:'stun:stun.l.google.com:19302'}];
     if (!Array.isArray(iceServers)) throw new Error('Invalid ICE configuration');
+    if (process.env.AURA_TURN_SECRET && process.env.AURA_TURN_HOST) {
+      const expiry = (Math.floor(Date.now() / 3600000) + 3) * 3600;
+      const username = `${expiry}:${req.user.userId}`;
+      const credential = createHmac('sha1', process.env.AURA_TURN_SECRET).update(username).digest('base64');
+      const address = process.env.AURA_TURN_HOST;
+      iceServers.push({
+        urls: [`turn:${address}:3478?transport=udp`, `turn:${address}:3478?transport=tcp`],
+        username, credential,
+      });
+    }
     res.set('Cache-Control','no-store').json({iceServers});
   } catch { res.status(503).json({error:'Calls are temporarily unavailable.'}); }
 });

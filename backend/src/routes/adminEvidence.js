@@ -2,6 +2,43 @@ const express=require('express'),db=require('../db');
 const {audit,superOnly,safeError}=require('../management');
 const {canReadRetained}=require('../reportEvidence');
 const router=express.Router();
+router.get('/:id/messages/:messageId/image', async (req, res) => {
+ const { id, messageId } = req.params;
+ if (!/^\d{1,15}$/.test(id) || !/^\d{1,15}$/.test(messageId)) {
+  return res.status(404).json({ error: 'Image unavailable.' });
+ }
+ try {
+  const { rows: [image] } = await db.query(`
+   SELECT msg.attachment, msg.attachment_mime
+   FROM safety_reports r
+   JOIN matches m ON m.id = r.conversation_id
+    OR (r.conversation_id IS NULL AND r.context_path = '/chat/' || m.id)
+   JOIN LATERAL (
+    SELECT id FROM messages WHERE match_id = m.id ORDER BY created_at DESC, id DESC LIMIT 30
+   ) recent ON recent.id = $2
+   JOIN messages msg ON msg.id = recent.id
+   WHERE r.id = $1 AND r.kind = 'user'
+    AND r.reporter_id IN (m.user1_id, m.user2_id)
+    AND r.reported_user_id IN (m.user1_id, m.user2_id)
+    AND msg.kind = 'image' AND msg.unsent_at IS NULL AND msg.attachment IS NOT NULL
+    AND msg.attachment_mime IN ('image/jpeg', 'image/png', 'image/webp')
+    AND NOT EXISTS (SELECT 1 FROM hidden_messages h WHERE h.message_id = msg.id AND h.user_id = r.reporter_id)
+    AND NOT EXISTS (SELECT 1 FROM conversation_preferences cp
+     WHERE cp.match_id = m.id AND cp.user_id = r.reporter_id AND msg.created_at <= cp.deleted_at)
+  `, [id, messageId]);
+  if (!image) return res.status(404).json({ error: 'Image unavailable.' });
+  await audit(db, req.actor, 'report_image_viewed', 'report', Number(id), 'Reported image review', { message_id: Number(messageId) });
+  res.set({
+   'Cache-Control': 'private, no-store',
+   'Content-Type': image.attachment_mime,
+   'Content-Disposition': 'inline',
+   'X-Content-Type-Options': 'nosniff',
+  });
+  res.send(image.attachment);
+ } catch (error) {
+  safeError(res, error);
+ }
+});
 function validReason(req,res,next){const reason=req.body?.reason;if(typeof reason!=='string'||reason.trim().length<5||reason.length>1000)return res.status(400).json({error:'Give a review reason of 5–1,000 characters.'});next();}
 router.post('/:id/evidence-reviewer',superOnly,validReason,async(req,res)=>{
  const reviewer=req.body.reviewerId===null?null:Number(req.body.reviewerId);if(reviewer!==null&&!Number.isInteger(reviewer))return res.status(400).json({error:'Select a management reviewer.'});

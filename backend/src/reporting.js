@@ -2,9 +2,13 @@ const {captureReportEvidence}=require('./reportEvidence');
 const db=require('./db');
 const {canViewPost}=require('./postPrivacy');
 const {canSeeProfile}=require('./profileVisibility');
-const reasons={user:['harassment','sexual_content','fake_profile','underage','scam','threats','other'],post:['sexual_content','harassment','hate','violence','spam','privacy','other'],bug:['login','chat','media','glimpses','layout','performance','other']};
+const reasons={user:['harassment','sexual_content','fake_profile','underage','scam','threats','other'],post:['sexual_content','harassment','hate','violence','spam','privacy','other'],bug:['login','chat','media','glimpses','layout','performance','other','beta_broken','beta_confusing','beta_idea'],appeal:['moderation_appeal']};
 async function submitReport(req,res){
- const body=req.body||{},kind=body.kind||'user',reason=body.reason,details=body.details??'',context=body.contextPath??null;
+ const body=req.body||{},reason=body.reason,details=body.details??'',context=body.contextPath??null;
+ // Older app builds submit appeals with the bug category.
+ const kind=body.kind==='bug'&&reason==='moderation_appeal'?'appeal':body.kind||'user';
+ const appeal=kind==='appeal';
+ if(appeal&&typeof details==='string'&&details.trim().length<10)return res.status(400).json({error:'Explain why we should review this decision in at least 10 characters.'});
  if(!Object.hasOwn(reasons,kind)||!reasons[kind].includes(reason)||typeof details!=='string'||details.length>2000||(context!==null&&(typeof context!=='string'||context.length>160||!/^\/[a-zA-Z0-9/_-]*$/.test(context)))||(kind==='bug'&&details.trim().length<10))return res.status(400).json({error:kind==='bug'?'Choose a category and describe the bug in at least 10 characters (up to 2,000).':'Choose a valid report reason. Details can be up to 2,000 characters.'});
  let target=null,reported=null,client;
  try{
@@ -27,15 +31,26 @@ async function submitReport(req,res){
   if(reported===req.user.userId)return res.status(400).json({error:'You cannot report yourself or your own post.'});
   client=await db.pool.connect();await client.query('BEGIN');
   await client.query('SELECT pg_advisory_xact_lock(68421002,$1::int)',[req.user.userId]);
+  if(appeal){
+   const id=body.noticeId;
+   const validId=Number.isInteger(id)&&id>0&&id<=2147483647;
+   const notice=validId&&await client.query(
+    "SELECT id FROM management_notices WHERE id=$1 AND user_id=$2 AND action IN ('warn','restrict','ban','hide_post','unpremium')",
+    [id,req.user.userId]
+   );
+   if(!notice?.rowCount){await client.query('ROLLBACK');return res.status(404).json({error:'This notice is unavailable for review.'});}
+   target=id;
+  }
   if(kind!=='bug'){
    const existing=await client.query("SELECT id,status FROM safety_reports WHERE reporter_id=$1 AND kind=$2 AND target_id=$3 AND status IN ('pending','reviewing')",[req.user.userId,kind,target]);
    if(existing.rowCount){await client.query('COMMIT');return res.json({...existing.rows[0],duplicate:true,message:'You already submitted a report for this item.'});}
   }
   const recent=await client.query("SELECT count(*)::int AS count FROM safety_reports WHERE reporter_id=$1 AND created_at>NOW()-INTERVAL '10 minutes'",[req.user.userId]);
   if(recent.rows[0].count>=5){await client.query('ROLLBACK');return res.status(429).json({error:'You have submitted several reports. Please wait 10 minutes before sending another.'});}
-  const result=await client.query('INSERT INTO safety_reports(reporter_id,kind,target_id,reported_user_id,reason,details,context_path,conversation_id,soul_session_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,status,created_at',[req.user.userId,kind,target,reported,reason,details.trim(),context,kind==='user'?(body.matchId||null):null,kind==='user'?(body.sessionId||null):null]);
+  const reportDetails=appeal?`AURA Management notice #${target}\n\n${details.trim()}`:details.trim();
+  const result=await client.query('INSERT INTO safety_reports(reporter_id,kind,target_id,reported_user_id,reason,details,context_path,conversation_id,soul_session_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,status,created_at',[req.user.userId,kind,target,reported,reason,reportDetails,context,kind==='user'?(body.matchId||null):null,kind==='user'?(body.sessionId||null):null]);
   if(kind==='user')await captureReportEvidence(client,result.rows[0],req.user.userId,{matchId:body.matchId,sessionId:body.sessionId});
-  await client.query('COMMIT');res.status(201).json({...result.rows[0],message:'Report received. Thank you for helping improve AURA.'});
+  await client.query('COMMIT');res.status(201).json({...result.rows[0],message:appeal?'AURA Management received your request for review.':'Report received. Thank you for helping improve AURA.'});
  }catch(error){if(client)await client.query('ROLLBACK');console.error('Report submission failed:',error.code||'unknown');res.status(500).json({error:'Unable to submit report. Please try again.'});}finally{client?.release();}
 }
 module.exports={submitReport};

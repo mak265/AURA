@@ -1,0 +1,139 @@
+.settings-theme-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; margin-top: 10px; padding: 4px; border-radius: 12px; background: #f2edf8; }
+.settings-theme-options label { position: relative; min-width: 0; cursor: pointer; }
+.settings-theme-options input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.settings-theme-options span { display: grid; min-height: 44px; place-items: center; padding: 4px; border-radius: 9px; color: #5e4f6f; font-size: 13px; }
+.settings-theme-options input:checked + span { background: #fff; color: #6035aa; box-shadow: 0 1px 4px #39245724; font-weight: 700; }
+.settings-theme-options input:focus-visible + span { outline: 2px solid #9567cc; }
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --dark-canvas: #191421;
+  --dark-surface: #241c2e;
+  --dark-raised: #30233e;
+  --dark-border: #423a4b;
+  --dark-ink: #f4f0f7;
+  --dark-muted: #c2b8cc;
+  --dark-accent: #d0b3ff;
+}
+[data-theme="dark"] body { background: #110e18; color: var(--dark-ink); }
+[data-theme="dark"] .phone-frame {
+  --app-canvas: var(--dark-canvas);
+  --app-surface: var(--dark-surface);
+  --app-tonal: var(--dark-raised);
+  --app-ink: var(--dark-ink);
+  --app-muted: var(--dark-muted);
+  --app-accent: var(--dark-accent);
+  --app-action: #7750a6;
+  --app-action-hover: #8a62bb;
+  --app-border: var(--dark-border);
+  border-color: var(--dark-border);
+}
+[data-theme="dark"] :is(.phone-frame .bg-aura-deep, .phone-frame .connections-screen, .settings-page, .lounge-page:not(.lounge-live), .welcome-screen, .journal-activity) {
+  background: var(--dark-canvas); color: var(--dark-ink);
+}
+[data-theme="dark"] :is(
+  .phone-frame .bg-aura-bg, .phone-frame .bg-aura-card, .phone-frame .bg-aura-card-2, .aura-card,
+  .phone-frame .bottom-nav, .mobile-topbar, .connections-screen .mobile-topbar, .connections-screen .connection-inbox,
+  .phone-frame .journal-screen .journal-header, .journal-screen .journal-post, .journal-screen .journal-tabs,
+  .journal-composer, .journal-activity-header, .journal-activity-list, .discover-person-card, .phone-frame .discover-screen .discover-person-card,
+  .phone-frame .settings-page-header, .settings-categories, .settings-card, .settings-link,
+  .settings-account-identity, .settings-account-session, .settings-account-delete,
+  .farming-screen .farming-mode-grid button, .farming-lounge-card, .farming-screen .farming-filters, .farming-find-bar,
+  .lounge-directory .lounge-card, .lounge-body > .lounge-card, .lounge-create .lounge-header, .lounge-page:not(.lounge-live) .lounge-header,
+  .management-notice, .conversation-preview, .conversation-menu, .message-removal-menu, .message-confirm-dialog,
+  .report-dialog, .murmur-editor, .reaction-dialog, .aura-message-alert,
+  .you-intro, .you-card, .you-photo-panel, .profile-page-bar, .profile-tabs,
+  .journal-post-actions, .discover-search, .discover-aura-card, .discover-aura-empty,
+  .glimpse-screen-header, .glimpse-create-options button, .glimpse-edit-panel, .glimpse-share-footer,
+  .glimpse-activity-sheet, .glimpse-dialog, .glimpse-discard > div, .glimpse-quick-reactions,
+  .remove-photo-dialog, .photo-crop-dialog, .floating-reactions, .message-reaction-badge,
+  .typing-dots, .phone-frame .aura-glass-sheet, .settings-report-bug, .policy-documents, .skeleton-card,
+  .lounge-invite, .murmur-editor-preview, .murmur-editor-input
+) { background: var(--dark-surface); color: var(--dark-ink); border-color: var(--dark-border); }
+[data-theme="dark"] :is(
+  .phone-frame .bg-aura-elevated, .phone-frame .nav-item.is-active, .phone-frame .nav-item.is-active .nav-icon-wrap,
+  .phone-frame .you-page .you-tabs, .phone-frame .you-page .you-tabs button.active,
+  .mobile-icon-action:not(.mobile-icon-primary), .connections-screen .mobile-brand-mark,
+  .connections-screen .connection-filters button[aria-pressed="false"], .phone-frame .settings-page-header > button,
+  .farming-screen .farming-mode-grid button.selected, .farming-mode-icon, .farming-mode-quota, .farming-premium-badge,
+  .settings-account-edit, .settings-notice, .settings-theme-options, .journal-activity-unread, .murmur-bubble,
+  .lounge-room-art, .lounge-directory-join, .lounge-directory-actions button[aria-expanded="true"], .lounge-create-preview,
+  .you-photo-options > summary, .you-visibility-icon, .you-summary .you-vibe, .you-interests > span, .photo-edit-button,
+  .social-profile-avatar, .profile-post-avatar, .identity-cover, .phone-frame .identity-cover,
+  .policy-documents details[open] summary, .murmur-editor-close, .lounge-member-sheet .lounge-actions button
+) { background: var(--dark-raised); color: var(--dark-accent); border-color: var(--dark-border); }
+[data-theme="dark"] :is(.phone-frame .text-white, .phone-frame .text-gray-200, .phone-frame .text-gray-300,
+  .auth-title, .editorial-title, .welcome-story h1, .connection-thread-name, .farming-lobby,
+  .farming-filter-summary strong, .farming-filters label, .journal-screen .journal-post-header h2,
+  .settings-categories h2, .settings-card h3, .settings-account-person h2, .settings-account-session h2,
+  .murmur-name, .lounge-directory-meta strong, .social-profile-intro h1, .you-stats strong,
+  .you-section-heading h2, .you-card-heading h3, .you-detail-grid dd, .you-visibility strong,
+  .you-privacy-card h2, .signup-policy) { color: var(--dark-ink); }
+[data-theme="dark"] :is(.phone-frame .text-gray-400, .phone-frame .text-gray-500, .phone-frame .text-gray-600,
+  .welcome-description, .welcome-footnote, .settings-help, .settings-toggle-row p, .settings-switch-control small,
+  .settings-group-title, .phone-frame .settings-categories p, .settings-account-person p, .settings-account-delete p,
+  .connections-screen .connection-thread-preview, .connections-screen .connection-thread-meta time,
+  .farming-mode-grid small, .farming-filter-note, .farming-allowance small, .farming-footer,
+  .lounge-page:not(.lounge-live) .lounge-card p, .lounge-list > p, .lounge-visibility-help, .lounge-create-preview p,
+  .journal-activity-intro, .journal-activity-list time, .conversation-preview-card header p, .conversation-preview-status,
+  .you-bio, .you-identity-hint, .you-summary, .you-stats span, .you-visibility small, .you-section-heading p,
+  .you-detail-grid dt, .you-empty, .you-edit-card label, .phone-frame .you-page .you-tabs button:not(.active),
+  .signup-policy p, .lounge-invite p, .murmur-editor-header p, .murmur-editor-input > span
+) { color: var(--dark-muted); }
+[data-theme="dark"] :is(.phone-frame .text-aura-violet-light, .phone-frame .text-aura-pink, .welcome-story h1 em,
+  .farming-filter-summary, .farming-lounge-card > svg, .farming-allowance, .lounge-code, .lounge-list-header > span,
+  .you-aura-name, .you-add-bio, .you-visibility, .you-section-heading > button, .you-card-heading, .you-account summary,
+  .discover-search input, .policy-review-link
+) { color: var(--dark-accent); }
+[data-theme="dark"] :is(.phone-frame .border-aura-border, .farming-filter-fields, .lounge-directory-meta,
+  .settings-toggle-row + .settings-toggle-row, .conversation-preview-card header, .journal-activity-list li + li,
+  .you-stats, .you-stats button + button, .policy-documents details + details) { border-color: var(--dark-border); }
+[data-theme="dark"] .you-intro .social-profile-avatar { border-color: var(--dark-surface); }
+[data-theme="dark"] .user-avatar.user-avatar-default { --avatar-face: var(--dark-raised); background: var(--dark-raised); color: #a89ab9; }
+[data-theme="dark"] .phone-frame .you-page .you-cover {
+  background: radial-gradient(ellipse at 85% 0%, #8053aa75, transparent 72%), linear-gradient(135deg, #2c223c, #44305c);
+  border-color: var(--dark-border);
+}
+[data-theme="dark"] .phone-frame .you-page .you-tabs button.active { background: #40324e; }
+[data-theme="dark"] .post-reaction-stack > span { background: var(--dark-surface); box-shadow: 0 0 0 2px var(--dark-surface); }
+[data-theme="dark"] .phone-frame .discover-screen .discover-aura-tabs {
+  background: var(--dark-surface);
+  border-color: var(--dark-border);
+}
+[data-theme="dark"] :is(.journal-screen .journal-tabs, .phone-frame .discover-screen .discover-aura-tabs) button {
+  color: var(--dark-muted);
+}
+[data-theme="dark"] :is(.journal-screen .journal-tabs, .phone-frame .discover-screen .discover-aura-tabs) button.active {
+  background: #40324e;
+  color: var(--dark-ink);
+  box-shadow: inset 0 0 0 1px #68527d;
+}
+[data-theme="dark"] .glimpses-heading h2 { color: var(--dark-ink); }
+[data-theme="dark"] :is(.glimpses-heading > span, .glimpse-circle-item > span:last-of-type, .glimpse-circle-item small) {
+  color: var(--dark-muted);
+}
+[data-theme="dark"] .glimpse-add {
+  background: var(--dark-raised);
+  color: var(--dark-accent);
+  border-color: #80609b;
+}
+[data-theme="dark"] .glimpse-add b { border-color: var(--dark-surface); }
+[data-theme="dark"] .glimpse-ring { background: var(--dark-surface); }
+[data-theme="dark"] .glimpse-ring-viewed { border-color: #71657d; }
+[data-theme="dark"] :is(.aura-input, .farming-filters input, .farming-filters select, .connection-search, .lounge-room-search) {
+  background: var(--dark-raised); color: var(--dark-ink); border-color: var(--dark-border); color-scheme: dark;
+}
+[data-theme="dark"] :is(.aura-input, .connection-search input, .lounge-room-search input)::placeholder { color: var(--dark-muted); }
+[data-theme="dark"] :is(.connection-search input, .lounge-room-search input) { color: var(--dark-ink); }
+[data-theme="dark"] .aura-btn-secondary { background: var(--dark-raised); color: var(--dark-accent); border-color: var(--dark-border); }
+[data-theme="dark"] :is(.settings-categories > button:hover, .connections-screen .connection-inbox .conversation-row:hover,
+ .message-removal-menu button:hover, .conversation-preview-bubble:not(.is-mine)) { background: var(--dark-raised); }
+[data-theme="dark"] .settings-theme-options span { color: var(--dark-muted); }
+[data-theme="dark"] .settings-theme-options input:checked + span { background: #49365d; color: var(--dark-ink); }
+[data-theme="dark"] .settings-switch:not(.on) { background: #554560; }
+[data-theme="dark"] :is(.chat-wallpaper-lavender .chat-messages, .wallpaper-lavender) { background: #20182f; }
+[data-theme="dark"] :is(.chat-wallpaper-white .chat-messages, .wallpaper-white) { background: #19171f; }
+[data-theme="dark"] :is(.chat-wallpaper-rose .chat-messages, .wallpaper-rose) { background: #291923; }
+[data-theme="dark"] .settings-wallpapers button { color: var(--dark-muted); border-color: var(--dark-border); }
+[data-theme="dark"] .settings-wallpapers button[aria-pressed="true"] { border-color: var(--dark-accent); }
+[data-theme="dark"] .auth-screen input:-webkit-autofill { -webkit-box-shadow: 0 0 0 100px var(--dark-raised) inset; -webkit-text-fill-color: var(--dark-ink); }

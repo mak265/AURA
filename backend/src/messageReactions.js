@@ -1,4 +1,5 @@
 const db = require('./db');
+const { notifyActivity } = require('./messageAlerts');
 const allowed = new Set(['like','love','care','haha','wow','sad','angry']);
 exports.reactToMessage = async (req,res) => {
   const {reaction}=req.body;
@@ -6,7 +7,7 @@ exports.reactToMessage = async (req,res) => {
   const client=await db.pool.connect();
   try{
     await client.query('BEGIN');
-    const result=await client.query(`SELECT msg.id FROM messages msg JOIN matches m ON m.id=msg.match_id
+    const result=await client.query(`SELECT msg.id, msg.sender_id FROM messages msg JOIN matches m ON m.id=msg.match_id
       WHERE msg.id=$1 AND m.id=$2 AND (m.user1_id=$3 OR m.user2_id=$3) AND m.soul_game_completed AND msg.unsent_at IS NULL AND NOT EXISTS(SELECT 1 FROM hidden_messages h WHERE h.message_id=msg.id AND h.user_id=$3)
       AND NOT EXISTS(SELECT 1 FROM conversation_preferences cp WHERE cp.user_id=$3 AND cp.match_id=m.id AND msg.created_at<=cp.deleted_at)
       AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=m.user1_id AND b.blocked_id=m.user2_id) OR (b.blocker_id=m.user2_id AND b.blocked_id=m.user1_id))
@@ -19,6 +20,12 @@ exports.reactToMessage = async (req,res) => {
     await client.query('COMMIT');
     req.app.get('io')?.to(`match:${Number(req.params.matchId)}`).emit('message:reactions',{messageId:Number(req.params.messageId),reactions});
     res.json({messageId:Number(req.params.messageId),reactions});
+    if (!old.rowCount) {
+      const matchId = Number(req.params.matchId);
+      notifyActivity(req.app.get('io'), result.rows[0].sender_id, req.user.userId, {
+        matchId, path: `/chat/${matchId}`, body: 'Someone reacted to your message.'
+      }).catch(error => console.error('Message reaction notification failed:', error.code || error.name));
+    }
   }catch(error){await client.query('ROLLBACK');console.error(error);res.status(500).json({error:'Unable to react.'});}
   finally{client.release();}
 };

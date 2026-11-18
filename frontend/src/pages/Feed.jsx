@@ -4,68 +4,74 @@ import Glimpses from '../components/Glimpses';
 import DeletePostButton from '../components/DeletePostButton';
 import ReactionSummary from '../components/ReactionSummary';
 import Avatar from '../components/Avatar';
-import ReactionIcon from '../components/ReactionIcon';
 import ReactionList from '../components/ReactionList';
 import ReactionButton from '../components/ReactionButton';
 import AuraRequestButton from '../components/AuraRequestButton';
 import PostAudience from '../components/PostAudience';
+import PostIdentity from '../components/PostIdentity';
 import PostImage from '../components/PostImage';
+import PostPrompts from '../components/PostPrompts';
+import { EditPostButton, SavePostButton } from '../components/PostActions';
 import Icon from '../components/Icon';
-import { useState, useEffect, useRef } from 'react';
+import AppTopBar from '../components/AppTopBar';
+import { prepareJournalPhoto } from '../photoUpload';
+import { useState, useEffect, useEffectEvent, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import api from '../api/client';
-import BottomNav from '../components/BottomNav';
 import { useAuth } from '../context/AuthContext';
-
-const REACTIONS = [
-  { id: 'like', label: 'Like' },
-  { id: 'love', label: 'Love' },
-  { id: 'haha', label: 'Laugh' },
-  { id: 'wow', label: 'Wow' },
-  { id: 'sad', label: 'Sad' },
-  { id: 'angry', label: 'Angry' },
-];
-
-
 
 export default function Feed() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const targetPost = searchParams.get('post');
+  const targetGlimpse = Number(searchParams.get('glimpse'));
+  const targetComments = searchParams.get('comments') === '1';
+  const openedTarget = useRef(null);
   const feedRequest=useRef(0);
   const [feedTab,setFeedTab]=useState('all');
   const [reactionsPost,setReactionsPost]=useState(null);
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [creating,setCreating]=useState(false);
+  const [preparingPhoto, setPreparingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [imageUrl, setImageUrl] = useState('');
   const [audience,setAudience] = useState('public');
+  const [identityMode, setIdentityMode] = useState('aura');
   const [caption, setCaption] = useState('');
   const [error, setError] = useState('');
   const fileInputRef = useRef(null);
+  const captionInputRef = useRef(null);
 
   // Comments modal state
   const [commentsPost, setCommentsPost] = useState(null);
   const [comments, setComments] = useState([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentReactionError, setCommentReactionError] = useState('');
+  const pendingCommentReactions = useRef(new Set());
   const [commentInput, setCommentInput] = useState('');
   const [replyTo, setReplyTo] = useState(null); // { id, name }
   const [replyText, setReplyText] = useState('');
-  const [commentPickerId, setCommentPickerId] = useState(null);
   const commentsEndRef = useRef(null);
-  const commentLongPressTimer = useRef(null);
-  const commentLongPressFired = useRef(false);
 
   // Post reaction picker state
 
   useEffect(() => {
     fetchPosts();
     return()=>{feedRequest.current++;};
-  }, [feedTab]);
+  }, [feedTab, targetPost]);
+
+  useEffect(() => {
+    setCommentsPost(null);
+  }, [targetPost]);
 
   async function fetchPosts() {
     const request=++feedRequest.current;
     setLoading(true);
+    setError('');
     try {
-      const res = await api.get('/feed',{params:{scope:feedTab}});
+      const res = await api.get('/feed',{params:targetPost ? { post: targetPost } : { scope:feedTab }});
       if(request!==feedRequest.current)return;
       // Coerce Postgres numeric strings to numbers so counts increment correctly
       setPosts(res.data.map(p => ({
@@ -83,42 +89,51 @@ export default function Feed() {
     }
   };
 
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setImageUrl(reader.result);
-      };
-      reader.readAsDataURL(file);
+  const handleFileUpload = async event => {
+    const file = event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    setPreparingPhoto(true);
+    setPhotoError('');
+    try {
+      setImageUrl(await prepareJournalPhoto(file));
+    } catch {
+      setPhotoError('Unable to prepare that photo. Try a JPEG, PNG, or WebP image.');
+    } finally {
+      setPreparingPhoto(false);
     }
   };
 
   const createPost = async () => {
-    if(creating)return;
+    if(creating || preparingPhoto)return;
+    setPhotoError('');
     if (!imageUrl && !caption.trim()) {
-      setError('Please add an image or write something.');
+      setPhotoError('Please add an image or write something.');
       return;
     }
     try {
       setCreating(true);
-      await api.post('/feed', { image_url: imageUrl || null, caption, visibility:audience });
+      await api.post('/feed', { image_url: imageUrl || null, caption, visibility:audience, identity_mode: identityMode });
       setImageUrl('');
       setCaption('');
+      setIdentityMode('aura');
       setShowCreate(false);
       fetchPosts();
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to create post.');
+      setPhotoError(err.response?.data?.error || 'Failed to create post. Please try again.');
     } finally {setCreating(false);}
   };
 
-  const changeAudience = async (postId,visibility) => {
+  const changeAudience = async (postId,visibility,confirmed) => {
     try {
-      await api.patch(`/feed/${postId}/privacy`,{visibility});
+      await api.patch(`/feed/${postId}/privacy`,{visibility,confirm_profile_visibility: confirmed === true});
       setPosts(previous=>previous.map(post=>post.id===postId?{...post,visibility}:post));
     } catch(err){setError(err.response?.data?.error || 'Unable to update audience.');}
   };
   // ---- Reactions ----
+  const updatePost = (id, changes) => {
+    setPosts(previous => previous.map(post => post.id === id ? { ...post, ...changes } : post));
+  };
   const applyReaction = async (postId, reaction) => {
     try {
       const res = await api.post(`/feed/${postId}/like`, { reaction });
@@ -160,11 +175,11 @@ export default function Feed() {
   });
 
   const openComments = async (post) => {
+    setCommentReactionError('');
     setCommentsPost(post);
     setCommentInput('');
     setReplyTo(null);
     setReplyText('');
-    setCommentPickerId(null);
     setComments([]);
     setCommentsLoading(true);
     try {
@@ -177,12 +192,26 @@ export default function Feed() {
     }
   };
 
+  const openTargetComments = useEffectEvent(post => openComments(post));
+  useEffect(() => {
+    if (!targetComments) {
+      openedTarget.current = null;
+      return;
+    }
+    const post = posts.find(post => String(post.id) === targetPost);
+    if (!post || loading || openedTarget.current === targetPost) return;
+    openedTarget.current = targetPost;
+    openTargetComments(post);
+  }, [posts, loading, targetPost, targetComments]);
+
   const closeComments = () => {
+    if (targetComments) {
+      setSearchParams({ post: targetPost }, { replace: true });
+    }
     setCommentsPost(null);
     setComments([]);
     setReplyTo(null);
     setReplyText('');
-    setCommentPickerId(null);
   };
 
   const addComment = async () => {
@@ -229,13 +258,16 @@ export default function Feed() {
 
   // ---- Comment reactions ----
   const applyCommentReaction = async (commentId, reaction) => {
+    if (pendingCommentReactions.current.has(commentId)) return;
+    pendingCommentReactions.current.add(commentId);
+    setCommentReactionError('');
     try {
       const res = await api.post(`/feed/comments/${commentId}/like`, { reaction });
       setComments(prev => prev.map(c => {
         if (c.id !== commentId) return c;
         const counts = { ...(c.reaction_counts || {}) };
         const prevReaction = c.my_reaction;
-        let likeCount = c.like_count || 0;
+        let likeCount = Number(c.like_count) || 0;
 
         if (prevReaction) {
           if (counts[prevReaction] !== undefined) {
@@ -254,29 +286,10 @@ export default function Feed() {
         return { ...c, reaction_counts: counts, like_count: likeCount, my_reaction: myReaction };
       }));
     } catch (err) {
-      console.error(err);
+      setCommentReactionError(err.response?.data?.error || 'Could not update the reaction. Try again.');
+    } finally {
+      pendingCommentReactions.current.delete(commentId);
     }
-  };
-
-  const startCommentLongPress = (id) => {
-    commentLongPressFired.current = false;
-    commentLongPressTimer.current = setTimeout(() => {
-      commentLongPressFired.current = true;
-      setCommentPickerId(id);
-    }, 450);
-  };
-
-  const cancelCommentLongPress = () => {
-    if (commentLongPressTimer.current) clearTimeout(commentLongPressTimer.current);
-  };
-
-  const handleCommentReactionTap = (c) => {
-    cancelCommentLongPress();
-    if (commentLongPressFired.current) {
-      commentLongPressFired.current = false;
-      return;
-    }
-    applyCommentReaction(c.id, c.my_reaction || 'like');
   };
 
   // ---- Comment tree helpers ----
@@ -304,36 +317,11 @@ export default function Feed() {
           <div className="flex items-center gap-3 mt-1 ml-1">
             <span className="text-[10px] text-gray-500">{formatTime(c.created_at)}</span>
 
-            <div className="relative">
-              {commentPickerId === c.id && (
-                <div className="absolute bottom-full mb-1 left-0 flex gap-1 bg-aura-elevated rounded-full px-2 py-1 shadow-xl border border-aura-border z-30">
-                  {REACTIONS.map(r => (
-                    <button
-                      key={r.id}
-                      onClick={() => { applyCommentReaction(c.id, r.id); setCommentPickerId(null); }}
-                      className="text-xl transition-transform hover:scale-125 active:scale-95"
-                    >
-                      <ReactionIcon type={r.id} size={30}/>
-                    </button>
-                  ))}
-                </div>
-              )}
-              <button
-                onPointerDown={() => startCommentLongPress(c.id)}
-                onPointerUp={() => handleCommentReactionTap(c)}
-                onPointerLeave={cancelCommentLongPress}
-                onPointerCancel={cancelCommentLongPress}
-                onContextMenu={e => e.preventDefault()}
-                className={`flex items-center gap-1 text-[11px] font-semibold select-none ${c.my_reaction ? 'text-aura-pink' : 'text-gray-400'}`}
-                style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
-              >
-                <ReactionIcon type={c.my_reaction || 'like'} size={20} muted={!c.my_reaction}/>
-                {c.like_count > 0 && <span>{c.like_count}</span>}
-              </button>
-            </div>
+            <ReactionButton reaction={c.my_reaction} commentCount={Number(c.like_count) || 0}
+              onReact={reaction => applyCommentReaction(c.id, reaction)}/>
 
             <button
-              onClick={() => { setReplyTo({ id: c.id, name: c.aura_name }); setReplyText(''); setCommentPickerId(null); }}
+              onClick={() => { setReplyTo({ id: c.id, name: c.aura_name }); setReplyText(''); }}
               className="text-[11px] font-semibold text-gray-400"
             >
               Reply
@@ -367,13 +355,17 @@ export default function Feed() {
   const visiblePosts=posts;
 
   return (
-    <div className="min-h-screen bg-aura-deep pb-24">
+    <div className="mobile-tab-screen journal-screen min-h-screen bg-aura-deep pb-24">
+      <AppTopBar title="Journal">
+        <button onClick={()=>setShowCreate(true)} className="mobile-icon-action mobile-icon-primary" aria-label="Create a journal post"><Icon name="edit" size={19}/></button>
+      </AppTopBar>
       <header className="journal-header">
-        <div className="journal-brand-row"><span className="brand-wordmark">aura<span className="brand-dot">.</span></span><span className="journal-edition">A SPACE TO BE YOURSELF</span></div>
-        <div className="journal-title-row"><div><p className="eyebrow">SMALL MOMENTS. REAL CONNECTIONS.</p><h1>Journal<span>.</span></h1></div><button onClick={()=>setShowCreate(true)} className="journal-write" aria-label="Create a journal post"><Icon name="edit" size={19}/></button></div>
         <button className="journal-composer" onClick={()=>setShowCreate(true)}><Avatar src={user?.user?.profile_photo} name={user?.aura?.aura_name || 'You'} size={32} className="journal-avatar !text-sm"/><span>Share a little of your day…</span><Icon name="photo" size={18}/></button>
-        <Glimpses myId={user?.user?.id}/>
-        <nav className="journal-tabs" aria-label="Journal filter"><button aria-pressed={feedTab==='all'} className={feedTab==='all'?'active':''} onClick={()=>setFeedTab('all')}>All moments</button><button aria-pressed={feedTab==='connections'} className={feedTab==='connections'?'active':''} onClick={()=>setFeedTab('connections')}>Your connections</button></nav>
+        <Glimpses key={targetGlimpse || 'feed'} myId={user?.user?.id} targetId={Number.isSafeInteger(targetGlimpse) && targetGlimpse > 0 ? targetGlimpse : null}
+          onCloseTarget={() => setSearchParams(previous => { const next = new URLSearchParams(previous); next.delete('glimpse'); return next; }, { replace: true })}/>
+        {targetPost ? <nav className="journal-tabs" aria-label="Post navigation">
+          <button onClick={() => setSearchParams({})}>← Back to Journal</button>
+        </nav> : <nav className="journal-tabs" aria-label="Journal filter"><button aria-pressed={feedTab==='all'} className={feedTab==='all'?'active':''} onClick={()=>setFeedTab('all')}>All moments</button><button aria-pressed={feedTab==='connections'} className={feedTab==='connections'?'active':''} onClick={()=>setFeedTab('connections')}>Your connections</button></nav>}
       </header>
 
       {error && <p className="text-red-400 text-sm px-5">{error}</p>}
@@ -388,7 +380,10 @@ export default function Feed() {
               <button onClick={() => setShowCreate(false)} className="aura-pressable text-gray-400 hover:text-white">✕</button>
             </div>
 
-            <div className="mb-4"><PostAudience value={audience} onChange={setAudience}/></div>
+            <div className="mb-4 space-y-3">
+              <PostAudience value={audience} onChange={setAudience} disabled={creating}/>
+              <PostIdentity value={identityMode} onChange={setIdentityMode} audience={audience} caption={caption} image={imageUrl} disabled={creating}/>
+            </div>
             {imageUrl ? (
               <div className="relative mb-3">
                 <img src={imageUrl} alt="preview" className="w-full h-64 object-cover rounded-xl" />
@@ -402,10 +397,11 @@ export default function Feed() {
             ) : (
               <button
                 onClick={() => fileInputRef.current?.click()}
+                disabled={preparingPhoto || creating}
                 className="aura-pressable w-full h-40 border-2 border-dashed border-aura-border rounded-[24px] flex flex-col items-center justify-center text-gray-300 mb-3 aura-soft-button"
               >
                 <Icon name="photo" size={30} className="mb-2 text-aura-violet-light"/>
-                <span className="text-xs">Tap to upload image (optional)</span>
+                <span className="text-xs">{preparingPhoto ? 'Preparing photo…' : 'Tap to upload image (optional)'}</span>
               </button>
             )}
             <input
@@ -413,10 +409,16 @@ export default function Feed() {
               type="file"
               accept="image/*"
               onChange={handleFileUpload}
+              disabled={preparingPhoto || creating}
               className="hidden"
             />
+            {photoError && <p role="alert" className="mb-3 text-xs text-red-600">{photoError}</p>}
 
+            <PostPrompts caption={caption} disabled={creating} onChoose={next => { setCaption(next); captionInputRef.current?.focus(); }}/>
             <textarea
+              ref={captionInputRef}
+              aria-label="Post caption"
+              maxLength={5000}
               className="aura-input resize-none mb-3"
               rows={3}
               placeholder="What's on your mind?"
@@ -432,7 +434,7 @@ export default function Feed() {
                 Cancel
               </button>
               <button
-                onClick={createPost} disabled={creating}
+                onClick={createPost} disabled={creating || preparingPhoto}
                 className="aura-pressable aura-primary-button flex-1 py-3 rounded-2xl text-sm font-bold text-white"
                 style={{ background: 'linear-gradient(135deg,#897294,#b38d98)' }}
               >
@@ -444,7 +446,9 @@ export default function Feed() {
       )}
 
       {/* Posts */}
-      {loading ? <ContentSkeleton/> : visiblePosts.length === 0 ? (
+      {loading ? <ContentSkeleton/> : targetPost && visiblePosts.length === 0 ? (
+        <p className="px-5 py-8 text-sm text-gray-500">This post is unavailable.</p>
+      ) : visiblePosts.length === 0 ? (
         <div className="text-center py-20 px-8">
           <Icon name="feed" size={32} className="mx-auto mb-4 text-aura-violet-light"/>
           <p className="text-gray-400">{feedTab==='connections'?'No posts from your connections yet.':'No posts yet.'}</p>
@@ -453,9 +457,28 @@ export default function Feed() {
         </div>
       ) : (
         <div className="journal-list">
-          {visiblePosts.map(post => (
+          {visiblePosts.map(post => {
+            const own = post.user_id === user?.user?.id;
+            return (
             <article key={post.id} className="journal-post">
-              <header className="journal-post-header"><Avatar src={post.profile_photo} name={post.aura_name} size={41} className="journal-avatar"/><div className="flex-1 min-w-0"><h2>{post.aura_name}</h2><div className="journal-post-meta"><time>{formatTime(post.created_at)}</time><span className="opacity-40">·</span><PostAudience value={post.visibility} onChange={post.user_id===user?.user?.id?value=>changeAudience(post.id,value):undefined}/></div></div>{post.user_id===user?.user?.id?<DeletePostButton postId={post.id} onDeleted={id=>setPosts(previous=>previous.filter(item=>item.id!==id))}/>:<ReportButton kind="post" postId={post.id} compact/>}</header>
+              <header className="journal-post-header">
+                <Avatar src={post.profile_photo} name={post.author_name || post.aura_name} size={41} className="journal-avatar"/>
+                <div className="flex-1 min-w-0">
+                  <h2>{post.author_name || post.aura_name}</h2>
+                  <div className="journal-post-meta flex-wrap">
+                    <time>{formatTime(post.created_at)}</time><span className="opacity-40">·</span>
+                    <PostAudience value={post.visibility} confirmRealProfile={post.identity_mode==='profile'} onChange={own ? (value, confirmed) => changeAudience(post.id, value, confirmed) : undefined}/>
+                    {post.edited_at && <span>· Edited</span>}
+                  </div>
+                </div>
+                <div className="flex items-center self-start shrink-0">
+                  <SavePostButton post={post} onSaved={saved => updatePost(post.id, { saved_by_me: saved })}/>
+                  {own ? <>
+                    <EditPostButton post={post} onEdited={changes => updatePost(post.id, changes)}/>
+                    <DeletePostButton postId={post.id} onDeleted={id=>setPosts(previous=>previous.filter(item=>item.id!==id))}/>
+                  </> : <ReportButton kind="post" postId={post.id} compact/>}
+                </div>
+              </header>
               {post.caption && <p className={`journal-caption ${!post.image_url?'text-post':''}`}>{post.caption}</p>}
               {/* Image (optional) */}
               {post.image_url && (
@@ -465,11 +488,12 @@ export default function Feed() {
               <footer className="journal-post-actions">
                 <div className="journal-react-group"><ReactionButton reaction={post.my_reaction} onReact={reaction=>applyReaction(post.id,reaction)}/></div>
                 <button onClick={()=>openComments(post)} className="journal-action" aria-label="View comments"><Icon name="talk" size={18}/><span>{post.comment_count>0?post.comment_count:'Comment'}</span></button>
-                {post.visibility==='public'&&post.user_id!==user?.user?.id&&<div className="journal-connect"><AuraRequestButton postId={post.id} matchId={post.match_id} canChat={post.can_chat}/></div>}
+                {post.visibility==='public'&&post.user_id!==user?.user?.id&&<div className="journal-connect"><AuraRequestButton postId={post.id} authorName={post.aura_name} matchId={post.match_id} canChat={post.can_chat}/></div>}
                 <ReactionSummary counts={post.reaction_counts} total={post.like_count} onClick={()=>setReactionsPost(post)}/>
               </footer>
             </article>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -493,6 +517,7 @@ export default function Feed() {
 
             {/* Comment list */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {commentReactionError && <p role="alert" className="text-xs text-red-600">{commentReactionError}</p>}
               {commentsLoading ? (
                 <p className="text-gray-500 text-sm text-center">Loading...</p>
               ) : comments.length === 0 ? (
@@ -532,7 +557,6 @@ export default function Feed() {
         </div>
       )}
 
-      <BottomNav />
     </div>
   );
 }

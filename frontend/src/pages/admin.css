@@ -89,6 +89,12 @@
 .admin-modal input:focus,.admin-modal textarea:focus,.admin-password-card input:focus { border-color:#b38ad9; }
 .admin-help { font-size:11px; color:#705e7e; line-height:1.9; }.admin-warning { font-size:11px; color:#76526c; background:#fdf2f6; border-radius:9px; padding:13px; margin:14px 0; }
 .admin-form-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:22px; }
+.admin-meet-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,13rem),1fr)); gap:14px; padding:0 24px 22px; align-items:end; }
+.admin-meet-form label { display:grid; gap:6px; min-width:0; font-size:12px; color:#5c4c6c; }
+.admin-meet-form :is(input,select) { width:100%; min-height:40px; padding:8px 10px; background:white; color:#5c4c6c; font-size:13px; border:1px solid #e9e0f2; border-radius:8px; }
+.admin-meet-form :is(input,select):focus-visible { outline:2px solid #684f80; outline-offset:2px; }
+.admin-meet-feedback { padding:0 24px 18px; color:#5c4c6c; font-size:13px; }
+.admin-meet-confirm { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
 .admin-report-meta { display:flex; gap:8px; }.admin-evidence-text { font-size:12px; color:#695577; line-height:1.9; white-space:pre-wrap; overflow-wrap:anywhere; }.admin-post-evidence p { font-size:12px; white-space:pre-wrap; color:#685476; margin-bottom:14px; }.admin-post-evidence img { width:100%; max-height:350px; object-fit:contain; border:1px solid #f2ebf8; border-radius:10px; }
 .admin-evidence-messages { border:1px solid #efe7f7; border-radius:12px; padding:14px; }.admin-evidence-messages>div { margin:12px 0; padding-bottom:12px; border-bottom:1px solid #f3edf8; }.admin-evidence-messages small { font-size:8px; color:#756580; }.admin-evidence-messages p { font-size:12px; color:#675275; white-space:pre-wrap; overflow-wrap:anywhere; margin-top:6px; }
 .admin-review-form .admin-check { display:flex; align-items:center; gap:8px; }.admin-review-form .admin-check input { width:auto; }

@@ -1,5 +1,5 @@
 import {useLayoutEffect,useRef,useState} from 'react';
-export default function MessageArrival({children,mine,fresh,className=''}) {
+export default function MessageArrival({children,mine,fresh,className='',id}) {
   const element=useRef(null);
   const [arrival]=useState({fresh,mine});
   useLayoutEffect(()=>{
@@ -8,5 +8,5 @@ export default function MessageArrival({children,mine,fresh,className=''}) {
     return()=>animation?.cancel();
     // Entrance belongs to this mount; a receipt update must not interrupt it.
   },[arrival]);
-  return <div ref={element} className={`message-arrival ${mine?'is-mine':''} ${className}`}>{children}</div>;
+  return <div id={id} ref={element} className={`message-arrival ${mine?'is-mine':''} ${className}`}>{children}</div>;
 }

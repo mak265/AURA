@@ -1,4 +1,5 @@
 const db = require('./db');
+const { isWorkStatus } = require('./workStatus');
 const LIMITS={chats:10,calls:10,religion:3};
 const fail = (message, status = 400, code) => Object.assign(new Error(message), {status, code});
 function parseOptions(options = {}) {
@@ -8,7 +9,9 @@ function parseOptions(options = {}) {
   const min = age(f.ageMin), max = age(f.ageMax);
   if ([min,max].some(v => v !== null && (!Number.isInteger(v) || v < 18 || v > 120)) || (min !== null && max !== null && min > max)) throw fail('Choose an age range between 18 and 120.');
   for (const key of ['gender','religion']) if (f[key] !== undefined && (typeof f[key] !== 'string' || f[key].length > 100)) throw fail('Invalid matching filters.');
-  return {mode, filters:{ageMin:min,ageMax:max,gender:f.gender?.trim() || '',religion:f.religion?.trim() || ''}};
+  const workStatus = f.workStatus ?? '';
+  if (workStatus !== '' && !isWorkStatus(workStatus)) throw fail('Invalid student or working status filter.');
+  return {mode, filters:{ageMin:min,ageMax:max,gender:f.gender?.trim() || '',religion:f.religion?.trim() || '',workStatus}};
 }
 async function allowance(client, userId) {
   const result = await client.query(`SELECT u.premium_until > NOW() AS premium,
@@ -42,7 +45,9 @@ async function cleanupSignals() {
     WHERE f.session_id=s.id AND (s.status<>'active' OR s.created_at<=NOW()-INTERVAL '5 minutes')`);
 }
 function startSignalCleanup() {
-  const run=()=>cleanupSignals().catch(error=>console.error('Call signal cleanup failed:',error.code||error.name));
+  const { finishConnectionCalls } = require('./connectionCallHistory');
+  const run=()=>Promise.all([cleanupSignals(),finishConnectionCalls(db)])
+    .catch(error=>console.error('Call signal cleanup failed:',error.code||error.name));
   run();const timer=setInterval(run,60000);timer.unref();return timer;
 }
 module.exports = {parseOptions,allowance,checkAllowance,charge,fail,cleanupSignals,startSignalCleanup};

@@ -11,7 +11,8 @@ async function authorizeChannel(socket,scope,typing=true) {
     JOIN users u ON u.id=$2 JOIN users a ON a.id=c.user1_id JOIN users b ON b.id=c.user2_id
     WHERE c.id=$1 AND (c.user1_id=$2 OR c.user2_id=$2) AND ${eligibility}
     AND u.auth_version=$3 AND a.banned_at IS NULL AND b.banned_at IS NULL
-    AND NOT EXISTS(SELECT 1 FROM blocks WHERE (blocker_id=c.user1_id AND blocked_id=c.user2_id) OR (blocker_id=c.user2_id AND blocked_id=c.user1_id))`,[scope.id,socket.userId,socket.authVersion||0]);
+    AND NOT EXISTS(SELECT 1 FROM account_sessions WHERE user_id=u.id AND session_id=$4 AND revoked_at IS NOT NULL)
+    AND NOT EXISTS(SELECT 1 FROM blocks WHERE (blocker_id=c.user1_id AND blocked_id=c.user2_id) OR (blocker_id=c.user2_id AND blocked_id=c.user1_id))`,[scope.id,socket.userId,socket.authVersion||0,socket.sessionId || null]);
   return result.rowCount>0;
 }
 function registerConversationSocket(socket) {

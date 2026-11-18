@@ -1,0 +1,67 @@
+.phone-frame.aura-app-shell {
+  --aura-viewport-height: 100dvh;
+  --aura-nav-height: 0px;
+  --aura-stage-height: calc(var(--aura-viewport-height) - var(--aura-nav-height));
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: var(--aura-viewport-height);
+  overflow: hidden;
+}
+
+.aura-app-shell:has(> .bottom-nav):not([data-keyboard]) {
+  --aura-nav-height: calc(64px + env(safe-area-inset-bottom));
+}
+
+html:has(.aura-app-shell), body:has(.aura-app-shell) { overflow: hidden; overscroll-behavior: none; }
+
+.aura-app-shell .aura-app-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.aura-app-shell .aura-app-stage-content { min-height: 100%; }
+.aura-app-shell .aura-app-stage-content .mobile-tab-screen { min-height: var(--aura-stage-height); padding-bottom: 16px; }
+.aura-app-shell .aura-app-stage-content .route-surface > .min-h-screen,
+.aura-app-shell .aura-app-stage-content .page-loading,
+.aura-app-shell .aura-app-stage-content .meet-search { min-height: var(--aura-stage-height); }
+.aura-app-shell .meet-search { padding-bottom: 30px; }
+.aura-app-shell :is(.chat-screen, .lounge-live) { height: var(--aura-stage-height); }
+.aura-app-shell .mobile-topbar h1 { font-size: 22px; }
+.aura-app-shell .journal-activity-header { position: sticky; top: 0; z-index: 10; padding-top: max(12px, env(safe-area-inset-top)); }
+
+.phone-frame.aura-app-shell > .bottom-nav {
+  position: relative;
+  inset: auto;
+  z-index: 40;
+  transform: none;
+  flex: 0 0 var(--aura-nav-height);
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  width: 100%;
+  min-height: 0;
+  padding: 3px 4px calc(5px + env(safe-area-inset-bottom));
+  border: 0;
+  border-top: 1px solid var(--app-border);
+  border-radius: 0;
+  background: var(--app-surface);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.aura-app-shell .nav-item { min-height: 50px; border-radius: 10px; font-size: clamp(9px, 2.7vw, 11px); transition: color 140ms ease; }
+.aura-app-shell .nav-item.is-active { background: transparent; color: var(--app-accent); }
+.aura-app-shell .nav-item.is-active .nav-icon-wrap { background: var(--app-tonal); }
+.aura-app-shell .nav-icon-wrap { width: 40px; }
+.phone-frame.aura-app-shell[data-keyboard] > .bottom-nav { display: none; }
+
+@media (max-width: 460px) {
+  .phone-frame.aura-app-shell { border: 0; box-shadow: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aura-app-shell .nav-item { transition: none; }
+}

@@ -44,7 +44,10 @@ before(async () => {
   await pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname,'../../db/migrations/010_conversation_actions.sql'),'utf8'));
   await pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname,'../../db/migrations/015_text_moderation.sql'),'utf8'));
   for(const file of ['011_message_reactions.sql','012_message_removal.sql'])await pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname,'../../db/migrations',file),'utf8'));
-  for(const file of ['016_safety_reports.sql','017_admin_management.sql','018_report_evidence_retention.sql','020_aura_farming.sql','021_farming_religion_trial.sql'])await pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname,'../../db/migrations',file),'utf8'));
+  for (const file of ['034_journal_activity_and_message_edits.sql', '035_message_retry_keys.sql', '036_work_status.sql', '037_public_usernames.sql', '039_account_sessions.sql', '045_post_identity.sql', '046_journal_edits_and_bookmarks.sql']) {
+    await pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname, '../../db/migrations', file), 'utf8'));
+  }
+  for(const file of ['016_safety_reports.sql','017_admin_management.sql','018_report_evidence_retention.sql','020_aura_farming.sql','021_farming_religion_trial.sql','023_profile_views.sql','028_native_push.sql'])await pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname,'../../db/migrations',file),'utf8'));
   const app = express();
   app.use(express.json());
   app.use('/profile',require('../../src/routes/profile'));
@@ -57,7 +60,7 @@ before(async () => {
   await new Promise(resolve => server.once('listening', resolve));
   baseUrl = 'http://127.0.0.1:' + server.address().port;
 });
-beforeEach(async () => { await pool.query('TRUNCATE farming_signals, farming_usage, report_message_evidence, safety_reports, account_warnings, daily_app_usage, moderation_state, hidden_messages, message_reactions, conversation_preferences, aura_sessions, matches, blocks, aura_session_answers, aura_session_messages, messages, likes, aura_requests'); await pool.query("UPDATE users SET settings='{}'::jsonb,premium_until=NULL,age=NULL,gender=NULL,religion=NULL"); });
+beforeEach(async () => { await pool.query('TRUNCATE farming_signals, farming_usage, report_message_evidence, safety_reports, account_warnings, daily_app_usage, moderation_state, hidden_messages, message_reactions, conversation_preferences, aura_sessions, matches, blocks, aura_session_answers, aura_session_messages, messages, likes, aura_requests'); await pool.query("UPDATE users SET settings='{}'::jsonb,premium_until=NULL,age=NULL,gender=NULL,religion=NULL,work_status=NULL"); });
 after(async () => {
   if(realtime)await new Promise(resolve=>realtime.close(resolve));
   if (server?.listening) await new Promise(resolve => server.close(resolve));
@@ -198,6 +201,18 @@ test('free age and gender filters are reciprocal and unknown ages do not match a
  const b=await startSearch(2,null,{filters:{gender:'Male'}});assert.notEqual(a,b);
  assert.notEqual(await startSearch(3),a);
  assert.equal(await startSearch(2,null,{filters:{gender:'Female',ageMin:20,ageMax:26}}),a);
+});
+test('study and work filters are reciprocal in chat and call, and unknown status satisfies Any status only', async () => {
+  await pool.query("UPDATE users SET work_status='student' WHERE id=1");
+  await pool.query("UPDATE users SET work_status='working' WHERE id=2");
+  for (const mode of ['chat', 'call']) {
+    await pool.query('TRUNCATE aura_sessions CASCADE');
+    const first = await startSearch(1, null, {mode, filters:{workStatus:'working'}});
+    assert.notEqual(await startSearch(3, null, {mode}), first);
+    assert.notEqual(await startSearch(2, null, {mode, filters:{workStatus:'working'}}), first);
+    assert.equal(await startSearch(2, null, {mode, filters:{workStatus:'student'}}), first);
+    assert.equal((await session(first)).status, 'active');
+  }
 });
 test('religion has a free trial and queued religion filters remain enforced',async()=>{
  await pool.query("UPDATE users SET religion='Catholic' WHERE id=1");
@@ -368,9 +383,12 @@ test('message fetching does not imply Read; recipient acknowledgements advance S
   const id = match.rows[0].id;
   const inserted = await pool.query("INSERT INTO messages(match_id,sender_id,content) VALUES($1,1,'Hello') RETURNING id",[id]);
   const messageId = inserted.rows[0].id;
-  const fetched = await request(2,'/matches/' + id + '/messages');
+  const fetched = await request(2,'/matches/' + id + '/messages?preview=1');
   assert.equal(fetched.body[0].read_at,null);
   assert.equal(fetched.body[0].delivered_at,null);
+  const history = await request(2,'/matches/' + id + '/messages');
+  assert.equal(history.body[0].read_at, null);
+  assert.equal(history.body[0].delivered_at, null);
   assert.equal((await request(3,'/matches/' + id + '/receipts',{ids:[messageId],read:true})).status,404);
   assert.deepEqual((await request(1,'/matches/' + id + '/receipts',{ids:[messageId],read:true})).body,[]);
   const delivered = await request(2,'/matches/' + id + '/receipts',{ids:[messageId],read:false});

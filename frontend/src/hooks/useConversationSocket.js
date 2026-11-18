@@ -30,6 +30,7 @@ export default function useConversationSocket({kind,id,enabled=true,myId,...call
     socket.on('typing',event=>{if(event.kind!==scope.kind||Number(event.id)!==scope.id||Number(event.userId)===Number(myId))return;clearTimeout(remoteTimer);setTyping({scope:`${kind}:${id}`,active:event.typing===true});if(event.typing)remoteTimer=setTimeout(clearRemote,3500);});
     socket.on('message',message=>{if(Number(message.match_id)!==scope.id||kind!=='match')return;if(Number(message.sender_id)!==Number(myId))clearRemote();listeners.current.onMessage?.(message);});
     socket.on('message:unsent',event=>listeners.current.onUnsent?.(event));
+    socket.on('message:edited',event=>listeners.current.onEdited?.(event));
     socket.on('message:reactions',event=>listeners.current.onReactions?.(event));
     socket.on('reveal:update',event=>listeners.current.onReveal?.(event));
     socket.on('soul_game:completed',()=>listeners.current.onUnlocked?.());
