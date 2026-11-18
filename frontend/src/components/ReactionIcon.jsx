@@ -3,7 +3,7 @@ const reactionTypes = new Set(['like', 'love', 'care', 'haha', 'wow', 'sad', 'an
 export default function ReactionIcon({ type = 'like', size = 24, muted = false }) {
   const reaction = reactionTypes.has(type) ? type : 'like';
   return <img
-    src={`/reactions/apple/${reaction}.png`}
+    src={`${import.meta.env.BASE_URL}reactions/apple/${reaction}.png`}
     alt=""
     aria-hidden="true"
     width={size}
